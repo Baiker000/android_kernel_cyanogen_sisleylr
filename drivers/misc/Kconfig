@@ -313,16 +313,6 @@ config APDS9802ALS
 	  This driver can also be built as a module.  If so, the module
 	  will be called apds9802als.
 
-config APDS9930
-	tristate "Avago APDS9930 combined als and proximity sensors"
-	depends on I2C
-	help
-	  Say Y here if you want to build a driver for Avago APDS9930
-	  combined ambient light and proximity sensor chip.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called apds9950. If unsure, say N here.
-
 config ISL29003
 	tristate "Intersil ISL29003 ambient light sensor"
 	depends on I2C && SYSFS
@@ -619,6 +609,12 @@ config QCOM_LIQUID_DOCK
 	  This option enables support for the USB and Ethernet ports found on
 	  the docking station of various models of Qualcomm Technology's
 	  LiQUID Mobile Development Platforms.
+
+config NXP_TFA9887
+	tristate "NXP TFA9887 Support"
+	depends on I2C
+	help
+	  The NXP TFA9887 chip is used as a smart PA Controller.
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"

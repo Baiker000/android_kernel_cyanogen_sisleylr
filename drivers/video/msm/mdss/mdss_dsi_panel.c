@@ -24,6 +24,8 @@
 
 #include "mdss_dsi.h"
 
+#include <soc/qcom/socinfo.h> //lenovo.sw2 houdz1 add for of_board_is_z2()
+
 #define DT_CMD_HDR 6
 
 /* NT35596 panel specific status variables */
@@ -35,6 +37,12 @@
 #define MIN_REFRESH_RATE 30
 
 DEFINE_LED_TRIGGER(bl_led_trigger);
+
+
+/***************lenovo.sw2 houdz1 add for z2**************/
+extern int get_hw_id(void);
+static int g_hw_id=0;
+/***************lenovo.sw2 houdz1 add for z2 end**************/
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -173,6 +181,96 @@ static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
 
+
+
+
+/*lenovo.sw2 houdz1 add for z2 (start)*/
+
+typedef enum {
+	BACKLIGHT_CTL_ALL_DISABLE = 0,
+	BACKLIGHT_CTL_BL_DISABLE,
+	BACKLIGHT_CTL_DM_DISABLE, //dimming
+	BACKLIGHT_CTL_ALL_ENABLE,
+} backlight_ctl;
+
+static char cabc_dimming[2] = {0x53, 0};	/* DTYPE_DCS_WRITE1 */
+static struct dsi_cmd_desc dimming_cmd =
+{
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(cabc_dimming)},
+	cabc_dimming
+};
+
+static int lenovo_bl_ctl_z2(struct mdss_dsi_ctrl_pdata *ctrl, int level,int flag)
+{
+	struct dcs_cmd_req cmdreq;
+	int current_flag = flag;
+	int bl_ctl=0;
+	int dimming_min_level = 30;
+	if((level == 0)&&(flag != BACKLIGHT_CTL_ALL_DISABLE))
+	{
+		bl_ctl =0x00;
+		current_flag = BACKLIGHT_CTL_ALL_DISABLE;
+	}
+	else if((level>0)&&(level <= dimming_min_level)&&(flag != BACKLIGHT_CTL_DM_DISABLE))
+	{
+		bl_ctl =0x24;
+		current_flag = BACKLIGHT_CTL_DM_DISABLE;
+	}
+	else if((level > dimming_min_level)&&(flag != BACKLIGHT_CTL_ALL_ENABLE))
+	{
+		bl_ctl =0x2C;
+		current_flag = BACKLIGHT_CTL_ALL_ENABLE;
+	}
+	else return current_flag;
+	
+	cabc_dimming[1] = bl_ctl;
+	memset(&cmdreq, 0, sizeof(cmdreq));
+	cmdreq.cmds = &dimming_cmd;
+	cmdreq.cmds_cnt = 1;
+	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+	cmdreq.rlen = 0;
+	cmdreq.cb = NULL;
+	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	pr_info("[houdz1]%s:level = %d,pre_flag=%d,current_flag=%d\n",__func__,level,flag,current_flag);
+	return current_flag;
+}
+
+static unsigned char lenovo_bl_map_z2(struct mdss_dsi_ctrl_pdata *ctrl,int level)
+{
+	int max_level = 255;
+	int min_level = 0;
+	unsigned long  map_level = level;
+
+	if(g_hw_id == 2)   max_level = 204;//PVT 80%
+
+#ifdef CONFIG_FB_LENOVO_LCD_EFFECT
+	if(ctrl->is_ultra_mode) max_level = 255;
+#endif
+
+	map_level = (unsigned long)level *(max_level-min_level)/(255-0);
+	//pr_info("[houdz]%s: level=%d, realbrightness=%d,hw_id=%d\n", __func__, level,(unsigned char)map_level,g_hw_id);
+	return (unsigned char)map_level;
+
+}
+
+static unsigned char lenovo_powersave_bl_map(int level) /*0-255*/
+{
+	unsigned long real_level = level;
+	if(level >=0 && level <=10)//(0,0),(10,10)
+		real_level = (unsigned long)level;
+	else if(level <=128 && level>10)//(10,10),(128,75)
+		real_level = ((unsigned long)level*65 + 530)/118;
+	else if(level <=205 && level>128)//(128,75),(205,155)
+		real_level = ((unsigned long)level* 80 - 4465)/77;
+	else if(level <=255 && level>205) //(205,155),(255,255)
+		real_level = ((unsigned long)level*2) - 255;
+	//pr_info("[houdz]%s: level=%d , realbrightness=%d\n", __func__, level,(unsigned char)real_level);
+	return (unsigned char)real_level;
+}
+
+
+/*lenovo.sw2 houdz1 add for z2 (end)*/
+
 static char led_pwm1[2] = {0x51, 0x0};	/* DTYPE_DCS_WRITE1 */
 static struct dsi_cmd_desc backlight_cmd = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(led_pwm1)},
@@ -183,6 +281,8 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 {
 	struct dcs_cmd_req cmdreq;
 	struct mdss_panel_info *pinfo;
+	int tmp_level;
+	static int flag=0;
 
 	pinfo = &(ctrl->panel_data.panel_info);
 	if (pinfo->dcs_cmd_by_left) {
@@ -190,18 +290,52 @@ static void mdss_dsi_panel_bklt_dcs(struct mdss_dsi_ctrl_pdata *ctrl, int level)
 			return;
 	}
 
-	pr_debug("%s: level=%d\n", __func__, level);
+	/*lenovo.sw2 houdz1 add for "after bl =0 ,disable cabc dimming fuction (start)*/
+	if(of_board_is_z2()){
+		flag = lenovo_bl_ctl_z2(ctrl,level,flag);
+		tmp_level = lenovo_powersave_bl_map(level);
+		tmp_level = lenovo_bl_map_z2(ctrl,tmp_level);
 
-	led_pwm1[1] = (unsigned char)level;
+		led_pwm1[1] = tmp_level;
+		memset(&cmdreq, 0, sizeof(cmdreq));
+		cmdreq.cmds = &backlight_cmd;
+		cmdreq.cmds_cnt = 1;
+		cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+		cmdreq.rlen = 0;
+		cmdreq.cb = NULL;
+		mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+		pr_info("[houdz1]%s:level=%d\n",__func__,tmp_level);
+	}
+	else if(of_board_is_sisley()|| of_board_is_sisleyl())
+	{
+		tmp_level = lenovo_powersave_bl_map(level);
 
-	memset(&cmdreq, 0, sizeof(cmdreq));
-	cmdreq.cmds = &backlight_cmd;
-	cmdreq.cmds_cnt = 1;
-	cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
-	cmdreq.rlen = 0;
-	cmdreq.cb = NULL;
+		led_pwm1[1] = tmp_level;
+		memset(&cmdreq, 0, sizeof(cmdreq));
+		cmdreq.cmds = &backlight_cmd;
+		cmdreq.cmds_cnt = 1;
+		cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+		cmdreq.rlen = 0;
+		cmdreq.cb = NULL;
+		mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+		pr_info("[JX]%s:level=%d\n",__func__,tmp_level);
+	}
+	else{
+	/*lenovo.sw2 houdz1 add for "after bl =0 ,disable cabc dimming fuction (end)*/
 
-	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	pr_info("%s: level=%d\n", __func__, level);
+
+		led_pwm1[1] = (unsigned char)level;
+
+		memset(&cmdreq, 0, sizeof(cmdreq));
+		cmdreq.cmds = &backlight_cmd;
+		cmdreq.cmds_cnt = 1;
+		cmdreq.flags = CMD_REQ_COMMIT | CMD_CLK_CTRL;
+		cmdreq.rlen = 0;
+		cmdreq.cb = NULL;
+
+		mdss_dsi_cmdlist_put(ctrl, &cmdreq);
+	}
 }
 
 static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
@@ -217,20 +351,29 @@ static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 			goto disp_en_gpio_err;
 		}
 	}
+if (gpio_is_valid(ctrl_pdata->disp_vsp_gpio)) {
+		rc = gpio_request(ctrl_pdata->disp_vsp_gpio,
+						"disp_vsp");
+		if (rc) {
+			pr_err("request disp_vsp gpio failed, rc=%d\n",
+				       rc);
+			goto disp_vsp_gpio_err;
+		}
+	}
+	if (gpio_is_valid(ctrl_pdata->disp_vsn_gpio)) {
+		rc = gpio_request(ctrl_pdata->disp_vsn_gpio, "disp_vsn");
+		if (rc) {
+			pr_err("request disp_vsn gpio failed, rc=%d\n",
+				       rc);
+			goto disp_vsn_gpio_err;
+		}
+	}
+
 	rc = gpio_request(ctrl_pdata->rst_gpio, "disp_rst_n");
 	if (rc) {
 		pr_err("request reset gpio failed, rc=%d\n",
 			rc);
 		goto rst_gpio_err;
-	}
-	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
-		rc = gpio_request(ctrl_pdata->bklt_en_gpio,
-						"bklt_enable");
-		if (rc) {
-			pr_err("request bklt gpio failed, rc=%d\n",
-				       rc);
-			goto bklt_en_gpio_err;
-		}
 	}
 	if (gpio_is_valid(ctrl_pdata->mode_gpio)) {
 		rc = gpio_request(ctrl_pdata->mode_gpio, "panel_mode");
@@ -240,19 +383,67 @@ static int mdss_dsi_request_gpios(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 			goto mode_gpio_err;
 		}
 	}
+	/*lenovo.sw2 houdz1 add (start)*/
+	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
+		rc = gpio_request(ctrl_pdata->bklt_en_gpio, "bklt_enable");
+		if (rc) {
+			pr_err("request pane backlight enable gpio failed,rc=%d\n",rc);
+			goto bklt_enable_gpio_err;
+		}
+	
+	}
+	if (gpio_is_valid(ctrl_pdata->bl_outdoor_gpio)) {
+		rc = gpio_request(ctrl_pdata->bl_outdoor_gpio, "bl_outdoor");
+		if (rc) {
+			pr_err("request pane bl_outdoor gpio failed,rc=%d\n",rc);
+			goto bklt_enable_gpio_err;
+		}
+	}
+	/*lenovo.sw2 houdz1 add (end)*/
 	return rc;
 
+bklt_enable_gpio_err: /*lenovo.sw2 houdz1 add */
+	if (gpio_is_valid(ctrl_pdata->mode_gpio))
+		gpio_free(ctrl_pdata->mode_gpio);
 mode_gpio_err:
-	if (gpio_is_valid(ctrl_pdata->bklt_en_gpio))
-		gpio_free(ctrl_pdata->bklt_en_gpio);
-bklt_en_gpio_err:
 	gpio_free(ctrl_pdata->rst_gpio);
 rst_gpio_err:
+	if (gpio_is_valid(ctrl_pdata->disp_vsn_gpio))
+		gpio_free(ctrl_pdata->disp_vsn_gpio);
+disp_vsn_gpio_err:
+	if (gpio_is_valid(ctrl_pdata->disp_vsp_gpio))
+		gpio_free(ctrl_pdata->disp_vsp_gpio);
+disp_vsp_gpio_err:
 	if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 		gpio_free(ctrl_pdata->disp_en_gpio);
 disp_en_gpio_err:
 	return rc;
 }
+
+
+/******************lenovo.sw2 add for z2 tianma lcd eds (start)*****************/
+static int panel_z2_tianma_is_esd_recover(struct mdss_dsi_ctrl_pdata *ctrl_pdata)
+{
+	struct mdss_panel_info *pinfo = NULL;
+
+	if(of_board_is_z2())
+	{
+		if(ctrl_pdata == NULL) return 0;
+		pinfo = &(ctrl_pdata->panel_data.panel_info);
+		//pr_info("[houdz1]%s:id = %d \n",__func__,ctrl_pdata->panel_id);
+		if(ctrl_pdata->panel_id == 1)
+		{
+			if(pinfo->panel_dead)
+			{
+				pr_info("[houdz1]%s:the panel is dead\n",__func__);
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+/******************lenovo.sw2 add for z2 tianma lcd eds (end)*****************/
+
 
 int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 {
@@ -291,6 +482,65 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 		if (!pinfo->cont_splash_enabled) {
 			if (gpio_is_valid(ctrl_pdata->disp_en_gpio))
 				gpio_set_value((ctrl_pdata->disp_en_gpio), 1);
+			/* lenovo.sw2 houdz1 add for lcd VSP/VSN enable start*/
+			if(of_board_is_z2()){
+				pr_info("%s: Z2--enable = %d\n", __func__, enable);
+				if (gpio_is_valid(ctrl_pdata->rst_gpio))
+					gpio_direction_output((ctrl_pdata->rst_gpio), 0);
+				mdelay(1);
+				if(ctrl_pdata->panel_id == 0){//BOE
+					if (gpio_is_valid(ctrl_pdata->disp_vsp_gpio))
+						//gpio_set_value((ctrl_pdata->disp_vsp_gpio), 1);
+						gpio_direction_output((ctrl_pdata->disp_vsp_gpio), 1);
+						mdelay(1);
+					if (gpio_is_valid(ctrl_pdata->disp_vsn_gpio))
+						//gpio_set_value((ctrl_pdata->disp_vsn_gpio), 1);
+						gpio_direction_output((ctrl_pdata->disp_vsn_gpio), 1);
+					mdelay(15);
+				}
+			}
+			else if(of_board_is_sisleyl() && (ctrl_pdata->panel_id == 0)){
+				if (gpio_is_valid(ctrl_pdata->rst_gpio)) 
+				{
+					gpio_direction_output((ctrl_pdata->rst_gpio), 0);
+					gpio_direction_output((ctrl_pdata->rst_gpio), 1);
+					mdelay(1);
+					gpio_direction_output((ctrl_pdata->rst_gpio), 0);
+					mdelay(2);
+					gpio_direction_output((ctrl_pdata->rst_gpio), 1);
+					mdelay(2);
+				}
+				if (gpio_is_valid(ctrl_pdata->disp_vsp_gpio))
+					//gpio_set_value((ctrl_pdata->disp_vsp_gpio), 1);
+					gpio_direction_output((ctrl_pdata->disp_vsp_gpio), 1);
+				mdelay(2);
+				if (gpio_is_valid(ctrl_pdata->disp_vsn_gpio))
+					//gpio_set_value((ctrl_pdata->disp_vsn_gpio), 1);
+					gpio_direction_output((ctrl_pdata->disp_vsn_gpio), 1);
+			}
+			else if(of_board_is_sisleyl() && (ctrl_pdata->panel_id == 1)){
+				if (gpio_is_valid(ctrl_pdata->rst_gpio)) 
+					gpio_set_value((ctrl_pdata->rst_gpio), 0);
+				mdelay(2);
+				if (gpio_is_valid(ctrl_pdata->disp_vsp_gpio))
+					//gpio_set_value((ctrl_pdata->disp_vsp_gpio), 1);
+					gpio_direction_output((ctrl_pdata->disp_vsp_gpio), 1);
+				mdelay(2);
+				if (gpio_is_valid(ctrl_pdata->disp_vsn_gpio))
+					//gpio_set_value((ctrl_pdata->disp_vsn_gpio), 1);
+					gpio_direction_output((ctrl_pdata->disp_vsn_gpio), 1);
+				mdelay(5);
+			}
+			else{
+				if (gpio_is_valid(ctrl_pdata->disp_vsp_gpio)) {
+					gpio_direction_output(ctrl_pdata->disp_vsp_gpio, 1);
+					mdelay(1);
+				}
+
+				if (gpio_is_valid(ctrl_pdata->disp_vsn_gpio))
+					gpio_direction_output(ctrl_pdata->disp_vsn_gpio, 1);
+			}
+			/* lenovo.sw2 houdz1 add for lcd VSP/VSN enable end*/
 
 			for (i = 0; i < pdata->panel_info.rst_seq_len; ++i) {
 				gpio_set_value((ctrl_pdata->rst_gpio),
@@ -298,11 +548,32 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 				if (pdata->panel_info.rst_seq[++i])
 					usleep(pinfo->rst_seq[i] * 1000);
 			}
+			/* lenovo.sw2 houdz1 add for lcd VSP/VSN enable start*/
+			if(of_board_is_z2() && (ctrl_pdata->panel_id == 1)){//tianma
+				if (gpio_is_valid(ctrl_pdata->disp_vsp_gpio))
+					//gpio_set_value((ctrl_pdata->disp_vsp_gpio), 1);
+					gpio_direction_output((ctrl_pdata->disp_vsp_gpio), 1);
+					mdelay(10);
+				if (gpio_is_valid(ctrl_pdata->disp_vsn_gpio))
+					//gpio_set_value((ctrl_pdata->disp_vsn_gpio), 1);
+					gpio_direction_output((ctrl_pdata->disp_vsn_gpio), 1);
+					mdelay(5);
+				if(panel_z2_tianma_is_esd_recover(ctrl_pdata)) mdelay(80);
+			}
+			/* lenovo.sw2 houdz1 add for lcd VSP/VSN enable end*/
 
 			if (gpio_is_valid(ctrl_pdata->bklt_en_gpio))
 				gpio_set_value((ctrl_pdata->bklt_en_gpio), 1);
 		}
 
+		/*lenovo.sw2 houdz1 add for sisleyl:ultra mode(start)*/
+		if(of_board_is_sisleyl())
+		{
+			if (gpio_is_valid(ctrl_pdata->bl_outdoor_gpio))
+				gpio_set_value((ctrl_pdata->bl_outdoor_gpio), 0);
+		}
+		/*lenovo.sw2 houdz1 add for sisleyl:ultra mode(end)*/
+		
 		if (gpio_is_valid(ctrl_pdata->mode_gpio)) {
 			if (pinfo->mode_gpio_state == MODE_GPIO_HIGH)
 				gpio_set_value((ctrl_pdata->mode_gpio), 1);
@@ -316,16 +587,52 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			pr_debug("%s: Reset panel done\n", __func__);
 		}
 	} else {
+		/* lenovo.sw2 houdz1 add for lcd bklt enable (start)*/	
 		if (gpio_is_valid(ctrl_pdata->bklt_en_gpio)) {
 			gpio_set_value((ctrl_pdata->bklt_en_gpio), 0);
 			gpio_free(ctrl_pdata->bklt_en_gpio);
 		}
+		/* lenovo.sw2 houdz1 add for lcd bklt enable  (end)*/
 		if (gpio_is_valid(ctrl_pdata->disp_en_gpio)) {
 			gpio_set_value((ctrl_pdata->disp_en_gpio), 0);
 			gpio_free(ctrl_pdata->disp_en_gpio);
 		}
-		gpio_set_value((ctrl_pdata->rst_gpio), 0);
-		gpio_free(ctrl_pdata->rst_gpio);
+		if(of_board_is_sisleyl()) //lenovo.sw2 add for sisleyl (boe)
+		{
+			gpio_set_value((ctrl_pdata->rst_gpio), 0);
+			gpio_free(ctrl_pdata->rst_gpio);
+			mdelay(5);
+			if (gpio_is_valid(ctrl_pdata->disp_vsn_gpio)) {
+				gpio_set_value((ctrl_pdata->disp_vsn_gpio), 0);
+				gpio_free(ctrl_pdata->disp_vsn_gpio);
+			}
+			mdelay(2);
+			if (gpio_is_valid(ctrl_pdata->disp_vsp_gpio)) {
+				gpio_set_value((ctrl_pdata->disp_vsp_gpio), 0);
+				gpio_free(ctrl_pdata->disp_vsp_gpio);
+			}
+			if (gpio_is_valid(ctrl_pdata->bl_outdoor_gpio))
+				gpio_free(ctrl_pdata->bl_outdoor_gpio);
+			mdelay(5);
+		}
+		else
+		{
+			/*lenovo.sw2 houdz1 add (start): add "disp_vsp_gpio" and "disp_vsp_gpio"*/
+			if (gpio_is_valid(ctrl_pdata->disp_vsp_gpio)) {
+				gpio_set_value((ctrl_pdata->disp_vsp_gpio), 0);
+				gpio_free(ctrl_pdata->disp_vsp_gpio);
+			}
+			if (gpio_is_valid(ctrl_pdata->disp_vsn_gpio)) {
+				gpio_set_value((ctrl_pdata->disp_vsn_gpio), 0);
+				gpio_free(ctrl_pdata->disp_vsn_gpio);
+			}
+			if(panel_z2_tianma_is_esd_recover(ctrl_pdata)) mdelay(100); //lenovo.sw2 houdz1 add for z2 esd!
+			gpio_set_value((ctrl_pdata->rst_gpio), 0);
+			gpio_free(ctrl_pdata->rst_gpio);
+			if (gpio_is_valid(ctrl_pdata->bl_outdoor_gpio))
+				gpio_free(ctrl_pdata->bl_outdoor_gpio);
+		}
+	
 		if (gpio_is_valid(ctrl_pdata->mode_gpio))
 			gpio_free(ctrl_pdata->mode_gpio);
 	}
@@ -594,6 +901,13 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 	}
 }
 
+#ifdef CONFIG_FB_LENOVO_LCD_EFFECT//lenovo.sw2 houdz1 add for lcd effect
+extern int lenovo_lcd_effect_reset(struct mdss_dsi_ctrl_pdata *ctrl_data);
+#endif
+
+static void mdss_dsi_panel_set_bl_level(struct mdss_panel_data *pdata,u32 bl_level);//lenovo.houdz1 add for ultra mode (sisleyl)
+static u32 g_bl_level = 0;//lenovo.houdz1 add for ultra mode (sisleyl)
+
 static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
@@ -614,10 +928,15 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 		if (ctrl->ndx != DSI_CTRL_LEFT)
 			goto end;
 	}
-
+	pr_info("mdss_dsi_panel_on start\n");
 	if (ctrl->on_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->on_cmds);
+	pr_info("mdss_dsi_panel_on end\n");
 
+#ifdef CONFIG_FB_LENOVO_LCD_EFFECT//lenovo.sw2 houdz1 add for lcd effect
+	lenovo_lcd_effect_reset(ctrl);
+#endif
+	if(of_board_is_sisleyl()) mdss_dsi_panel_set_bl_level(pdata,g_bl_level); //lenovo.houdz1 add for ultra mode (sisleyl)
 end:
 	pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;
 	pr_debug("%s:-\n", __func__);
@@ -1607,6 +1926,30 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->off_cmds,
 		"qcom,mdss-dsi-off-command", "qcom,mdss-dsi-off-command-state");
+	/*lenovo.sw2 houdz1 add for lcd effect(start)*/
+	#ifdef CONFIG_FB_LENOVO_LCD_EFFECT
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->custom_mode_cmds,
+		"lenovo,lcd-effect-custom-mode-command", "lenovo,lcd-effect-custom-mode-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->default_mode_cmds,
+		"lenovo,lcd-effect-default-mode-command", "lenovo,lcd-effect-default-mode-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->comfort_mode_cmds,
+		"lenovo,lcd-effect-comfort-mode-command", "lenovo,lcd-effect-comfort-mode-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->outside_mode_cmds,
+		"lenovo,lcd-effect-outside-mode-command", "lenovo,lcd-effect-outside-mode-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->ultra_mode_cmds,
+		"lenovo,lcd-effect-ultra-mode-command", "lenovo,lcd-effect-ultra-mode-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->camera_mode_cmds,
+		"lenovo,lcd-effect-camera-mode-command", "lenovo,lcd-effect-camera-mode-command-state");
+	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->gamma_cmds,
+		"lenovo,lcd-effect-gamma-command", "lenovo,lcd-effect-gamma-command-state");
+
+	rc = of_property_read_u32(np, "lenovo,panel_id", &tmp);
+	ctrl_pdata->panel_id = (!rc ? tmp : 0);
+	printk("[houdz1]%s,gamma_cmds_cnt = %d, panel_id=%d\n",__func__,ctrl_pdata->gamma_cmds.cmd_cnt,ctrl_pdata->panel_id);
+	ctrl_pdata->is_ultra_mode = 0;
+	#endif
+	/*lenovo.sw2 houdz1 add for lcd effect(end)*/
+
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->status_cmds,
 			"qcom,mdss-dsi-panel-status-command",
@@ -1656,6 +1999,32 @@ error:
 	return -EINVAL;
 }
 
+/*lenovo.sw2 houdz1 add  (sisley-lite) -- begin*/
+static void mdss_dsi_panel_set_bl_level(struct mdss_panel_data *pdata,u32 bl_level)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
+
+	if (pdata == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return;
+	}
+
+	ctrl_pdata = container_of(pdata, struct mdss_dsi_ctrl_pdata,panel_data);
+	if(ctrl_pdata == NULL) {
+		pr_err("%s: ctrl_pdata is NULL\n",__func__);
+		return;
+	}
+
+	if (gpio_is_valid(ctrl_pdata->bl_outdoor_gpio))
+	{
+		gpio_set_value(ctrl_pdata->bl_outdoor_gpio,bl_level);
+		g_bl_level = bl_level;
+		pr_err("%s %s success\n", __func__, bl_level ? "on" : "off");
+	}
+	return;
+}
+/*lenovo.sw2 houdz1 add  (sisley-lite) -- end*/
+
 int mdss_dsi_panel_init(struct device_node *node,
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata,
 	bool cmd_cfg_cont_splash)
@@ -1701,6 +2070,14 @@ int mdss_dsi_panel_init(struct device_node *node,
 	ctrl_pdata->low_power_config = mdss_dsi_panel_low_power_config;
 	ctrl_pdata->panel_data.set_backlight = mdss_dsi_panel_bl_ctrl;
 	ctrl_pdata->switch_mode = mdss_dsi_panel_switch_mode;
+	
+	if(of_board_is_sisleyl()){//lenovo.sw2 houdz1 add (sisley-lite)
+		ctrl_pdata->panel_data.set_bl_level = mdss_dsi_panel_set_bl_level; 
+	}
+/*lenovo.sw2 houdz1 add for z2*/
+	g_hw_id = 0;
+	if(of_board_is_z2()) g_hw_id = get_hw_id();
+/*lenovo.sw2 houdz1 add for z2 end*/
 
 	return 0;
 }

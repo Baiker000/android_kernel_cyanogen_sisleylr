@@ -76,7 +76,9 @@
 #include <linux/elevator.h>
 #include <linux/sched_clock.h>
 #include <linux/random.h>
-
+/*Lenovo-sw linrk1 modify begin 2015-01-30 add bootprof*/
+#include <linux/bootprof.h>
+/*Lenovo-sw linrk1 modify end 2015-01-30 add bootprof**/
 #include <asm/io.h>
 #include <asm/bugs.h>
 #include <asm/setup.h>
@@ -824,7 +826,9 @@ static int __ref kernel_init(void *unused)
 	numa_default_policy();
 
 	flush_delayed_fput();
-
+        /*Lenovo-sw linrk1 modify begin 2015-01-30 add bootprof*/
+	log_boot("Kernel_init_done");
+        /*Lenovo-sw linrk1 modify end 2015-01-30 add bootprof*/
 	if (ramdisk_execute_command) {
 		if (!run_init_process(ramdisk_execute_command))
 			return 0;

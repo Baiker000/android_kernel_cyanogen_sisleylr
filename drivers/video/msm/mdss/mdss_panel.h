@@ -200,6 +200,9 @@ enum mdss_intf_events {
 	MDSS_EVENT_DSI_STREAM_SIZE,
 	MDSS_EVENT_DSI_DYNAMIC_SWITCH,
 	MDSS_EVENT_REGISTER_RECOVERY_HANDLER,
+	#ifdef CONFIG_FB_LENOVO_LCD_EFFECT
+	MDSS_EVENT_LENOVO_PANEL_EFFECT,/*lenovo.sw2 add for lcd effect*/
+	#endif
 };
 
 struct lcd_panel_info {
@@ -419,6 +422,7 @@ struct mdss_panel_info {
 struct mdss_panel_data {
 	struct mdss_panel_info panel_info;
 	void (*set_backlight) (struct mdss_panel_data *pdata, u32 bl_level);
+	void (*set_bl_level) (struct mdss_panel_data *pdata, u32 bl_level); //lenovo.sw2 houdz1 add for ultra mode (sisley-lite)
 	unsigned char *mmss_cc_base;
 
 	/**

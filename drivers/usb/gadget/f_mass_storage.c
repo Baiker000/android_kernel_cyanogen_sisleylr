@@ -507,7 +507,7 @@ static void bulk_out_complete(struct usb_ep *ep, struct usb_request *req)
 	wakeup_thread(common);
 	spin_unlock(&common->lock);
 }
-
+extern bool has_mtp;
 static int fsg_setup(struct usb_function *f,
 		     const struct usb_ctrlrequest *ctrl)
 {
@@ -554,7 +554,11 @@ static int fsg_setup(struct usb_function *f,
 				w_length != 1)
 			return -EDOM;
 		VDBG(fsg, "get max LUN\n");
-		*(u8 *)req->buf = fsg->common->nluns - 1;
+		//*(u8 *)req->buf = fsg->common->nluns - 1;
+		if(has_mtp==true)
+			*(u8 *)req->buf = 0;
+		else
+			*(u8 *)req->buf = fsg->common->nluns - 1;
 
 		/* Respond with data/status */
 		req->length = min((u16)1, w_length);
@@ -2778,6 +2782,7 @@ static inline void fsg_common_put(struct fsg_common *common)
 	kref_put(&common->ref, fsg_common_release);
 }
 
+static struct device* cdrom_dev=NULL;
 /*
  * This function creates device entry for LUN and its related paramters.
 */
@@ -2853,6 +2858,8 @@ static int create_lun_device(struct fsg_common *common,
 			rc = -EINVAL;
 			goto error_luns;
 		}
+		if(curlun->cdrom == 1)
+			cdrom_dev = &curlun->dev;
 	}
 
 	common->nluns = nluns;

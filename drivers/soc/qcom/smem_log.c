@@ -542,6 +542,124 @@ static ssize_t smem_log_write_bin(struct file *fp, const char __user *_buf,
 	kfree(buf);
 	return count;
 }
+/* yangjq, 2012-11-13, For amss_printk, START */
+#if 1
+/* 
+ * Notice, the SMEM size defined below must be equal to AMSS' defination, 
+ * otherwise smem_alloc() will fail and amss_prink can't work.
+ */
+//#define SMEM_DMESG_BUFFER_LEN (256)
+#define SMEM_DMESG_BUFFER_LEN (16 * 1024)
+#define SMEM_RESERVED_INT32 7
+struct smem_dmesg_type {
+	int in;
+	int out;
+	int size;
+	char *buf;
+	int in_use;
+	int reserved[SMEM_RESERVED_INT32];
+};
+
+static volatile struct smem_dmesg_type *smem_dmesg = NULL;
+static char *smem_dmesg_buf = NULL;
+static int _smem_dmesg_init(void)
+{
+	smem_dmesg =
+		(struct smem_dmesg_type *)smem_alloc(SMEM_DMESG,
+						SMEM_DMESG_BUFFER_LEN,
+						0,
+						SMEM_ANY_HOST_FLAG);
+#ifdef __LP64__
+	pr_info("%s(), smem_dmesg = 0x%08llu\n", __func__, (uint64_t)smem_dmesg);
+#else
+	pr_info("%s(), smem_dmesg = 0x%08x\n", __func__, (uint32_t)smem_dmesg);
+#endif
+	if (!smem_dmesg)
+		pr_info("%s: no SMEM_DMESG allocated\n", __func__);
+	else {
+		pr_info("%s(), in=%d, out=%d\r\n", __func__, smem_dmesg->in, smem_dmesg->out);
+#ifdef __LP64__
+		pr_info("%s(), size=%d, buf=0x%08llu\r\n", __func__, smem_dmesg->size, (uint64_t)smem_dmesg->buf);
+#else
+		pr_info("%s(), size=%d, buf=0x%08x\r\n", __func__, smem_dmesg->size, (uint32_t)smem_dmesg->buf);
+#endif
+		/* Can't use smem_dmesg->buf as amss does because of kernel's MMU mapping */
+		smem_dmesg_buf = (char *)smem_dmesg + sizeof(struct smem_dmesg_type);
+	}
+
+	return 0;
+}
+
+int smem_dmesg_get_used_size(void)
+{
+  int used_size;
+  int in;
+
+  in = smem_dmesg->in;
+  if(in >= smem_dmesg->out)
+    used_size = in - smem_dmesg->out;
+  else
+    used_size = smem_dmesg->size - smem_dmesg->out + in;
+
+  return used_size;
+}
+
+int smem_dmesg_get_message(char *message, int len)
+{
+#if 0
+	char *s = "amss:\n";
+
+	len = strlen(s);
+	strcpy(message, s);
+
+	return len;
+#else
+	int total;
+	int count;
+	int out;
+
+	total = 0;
+	if (len > 0 && smem_dmesg && smem_dmesg_buf) {
+		/* keep 1 char space for the string's zero end */
+		len--;
+		total = min(len, smem_dmesg_get_used_size());
+		if(total > 0) {
+			out = smem_dmesg->out;
+			if (out + total > smem_dmesg->size) {
+				count = out + total - smem_dmesg->size;
+				memcpy(message, smem_dmesg_buf + out, total - count);
+				memcpy(message + total - count, smem_dmesg_buf, count);
+			} else
+				memcpy(message, smem_dmesg_buf + out, total);
+
+			/* End the string with zero */
+			message[total] = 0;
+			smem_dmesg->out = (out + total) % smem_dmesg->size;
+	
+			wmb();
+		}
+	}
+
+	return total;
+#endif /* 0 */
+} /* smem_diag_get_message */
+
+void smem_set_reserved(int index, int data)
+{
+  if ( smem_dmesg != NULL && index < SMEM_RESERVED_INT32)
+     smem_dmesg->reserved[index] = data;
+}
+
+int smem_get_reserved(int index)
+{
+	int data = 0;
+	if ( smem_dmesg != NULL && index < SMEM_RESERVED_INT32)
+		data = smem_dmesg->reserved[index];
+
+	return data;
+}
+#endif /* 0 */
+/* yangjq, 2012-11-13, For amss_printk, END */
 
 static int smem_log_open(struct inode *ip, struct file *fp)
 {
@@ -991,6 +1109,11 @@ static int smem_log_initialize(void)
 {
 	int ret;
 
+	/* yangjq, 2012-11-13, For amss_printk, START */
+#if 1
+	ret = _smem_dmesg_init();
+#endif /* 0 */
+	/* yangjq, 2012-11-13, For amss_printk, END */
 	ret = _smem_log_init();
 	if (ret < 0) {
 		pr_err("%s: init failed %d\n", __func__, ret);

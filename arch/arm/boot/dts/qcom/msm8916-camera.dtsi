@@ -270,7 +270,8 @@
 		};
 	};
 };
-
+/*+begining: lijk. change the CCI speed from 100khz to 400khz. 2014-05-05. */
+ // test
 &i2c_freq_100Khz {
 	qcom,hw-thigh = <78>;
 	qcom,hw-tlow = <114>;
@@ -279,7 +280,7 @@
 	qcom,hw-thd-dat = <10>;
 	qcom,hw-thd-sta = <77>;
 	qcom,hw-tbuf = <118>;
-	qcom,hw-scl-stretch-en = <0>;
+	qcom,hw-scl-stretch-en = <1>;//for ois IC ljk
 	qcom,hw-trdhld = <6>;
 	qcom,hw-tsp = <1>;
 	status = "ok";
@@ -292,12 +293,13 @@
 	qcom,hw-tsu-sta = <21>;
 	qcom,hw-thd-dat = <13>;
 	qcom,hw-thd-sta = <18>;
-	qcom,hw-tbuf = <32>;
-	qcom,hw-scl-stretch-en = <0>;
+	qcom,hw-tbuf = <25>;
+	qcom,hw-scl-stretch-en = <1>; //for ois IC ljk
 	qcom,hw-trdhld = <6>;
 	qcom,hw-tsp = <3>;
 	status = "ok";
 };
+/*+ end*/
 
 &i2c_freq_custom {
 	qcom,hw-thigh = <15>;

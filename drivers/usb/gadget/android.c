@@ -37,6 +37,9 @@
 #include "gadget_chips.h"
 
 #include "f_fs.c"
+//lenovo sw, yexh1 add for ldb interface 20140814
+#include "f_fsldb.c"
+//lenovo sw, yexh1 add for ldb interface 20140814 end
 #ifdef CONFIG_SND_PCM
 #include "f_audio_source.c"
 #endif
@@ -199,6 +202,9 @@ struct android_dev {
 	enum android_pm_qos_state curr_pm_qos_state;
 	struct work_struct work;
 	char ffs_aliases[256];
+//lenovo sw, yexh1 add for ldb interface 20140814
+	char fldbfs_aliases[256];
+//lenovo sw, yexh1 add for ldb interface 20140814 end
 
 	/* A list of struct android_configuration */
 	struct list_head configs;
@@ -225,6 +231,7 @@ static int android_dev_count;
 static int android_bind_config(struct usb_configuration *c);
 static void android_unbind_config(struct usb_configuration *c);
 static struct android_dev *cdev_to_android_dev(struct usb_composite_dev *cdev);
+struct android_dev *_android_dev;
 static struct android_configuration *alloc_android_config
 						(struct android_dev *dev);
 static void free_android_config(struct android_dev *dev,
@@ -305,6 +312,35 @@ static void android_pm_qos_update_latency(struct android_dev *dev, u32 latency)
 
 	last_vote = latency;
 }
+
+static int android_dev_flag = 0;
+void popup_usb_select_window(int popup){
+	struct android_dev *dev = _android_dev;
+	char *appear[2]    = { "USB_STATE=AVAILABLE", NULL };
+	char *disappear[2]   = { "USB_STATE=UNAVAILABLE", NULL };
+	char **uevent_envp = NULL;
+	static int old_state = 0;
+
+	if(!android_dev_flag){
+		printk("%s:android work not init\n",__func__);
+		return;
+	}
+	printk("old state is %d new state is %d in %s\n",old_state,popup,__func__);
+	if((old_state == popup) || (popup == 0))
+		return;
+	else
+		old_state = popup;
+	if(popup == 1)
+		uevent_envp = appear;
+	else if(popup == 2)
+		uevent_envp = disappear;
+	if(uevent_envp){
+		kobject_uevent_env(&dev->dev->kobj, KOBJ_CHANGE, uevent_envp);
+		pr_info("%s: sent uevent %s\n", __func__, uevent_envp[0]);
+	}
+}
+
+char* cdrom_path = "/system/etc/cdrom_install.iso";
 
 #define DOWN_PM_QOS_SAMPLE_SEC		5
 #define DOWN_PM_QOS_THRESHOLD		100
@@ -387,6 +423,7 @@ enum android_device_state {
 	USB_RESUMED
 };
 
+extern int is_charger_plug_in(void);
 static void android_work(struct work_struct *data)
 {
 	struct android_dev *dev = container_of(data, struct android_dev, work);
@@ -401,6 +438,7 @@ static void android_work(struct work_struct *data)
 	static enum android_device_state last_uevent, next_state;
 	unsigned long flags;
 	int pm_qos_vote = -1;
+	int popup = 0;
 
 	spin_lock_irqsave(&cdev->lock, flags);
 	if (dev->suspended != dev->sw_suspended && cdev->config) {
@@ -422,6 +460,15 @@ static void android_work(struct work_struct *data)
 	dev->sw_connected = dev->connected;
 	dev->sw_suspended = dev->suspended;
 	spin_unlock_irqrestore(&cdev->lock, flags);
+	if (cdev->config){
+		popup = 1;
+	}
+	if(is_charger_plug_in() == 0)
+		popup=2;
+
+        printk("popup state is %d in %s\n", popup,__func__);  //yexh1
+
+	popup_usb_select_window(popup);
 
 	if (pdata->pm_qos_latency[0] && pm_qos_vote == 1) {
 		cancel_delayed_work_sync(&dev->pm_qos_work);
@@ -465,6 +512,10 @@ static void android_work(struct work_struct *data)
 			last_uevent = next_state;
 		}
 		pr_info("%s: sent uevent %s\n", __func__, uevent_envp[0]);
+		if(uevent_envp == configured && cdrom_dev != NULL)
+			fsg_store_file(cdrom_dev,NULL,cdrom_path,strlen(cdrom_path));
+		if(uevent_envp == disconnected && cdrom_dev != NULL)
+			fsg_store_file(cdrom_dev,NULL,NULL,0);
 	} else {
 		pr_info("%s: did not send uevent (%d %d %p)\n", __func__,
 			 dev->connected, dev->sw_connected, cdev->config);
@@ -700,6 +751,203 @@ static void *functionfs_acquire_dev_callback(const char *dev_name)
 static void functionfs_release_dev_callback(struct ffs_data *ffs_data)
 {
 }
+//lenovo sw, yexh1 add for ldb interface 20140814
+/*FLDBFS*/
+
+/*-------------------------------------------------------------------------*/
+/* Supported functions initialization */
+
+struct functionldbfs_config {
+	bool opened;
+	bool enabled;
+	struct fldbfs_data *data;
+	struct android_dev *dev;
+};
+
+static int fldbfs_function_init(struct android_usb_function *f,
+			     struct usb_composite_dev *cdev)
+{
+	f->config = kzalloc(sizeof(struct functionldbfs_config), GFP_KERNEL);
+	if (!f->config)
+		return -ENOMEM;
+
+	return functionldbfs_init();
+}
+
+static void fldbfs_function_cleanup(struct android_usb_function *f)
+{
+	functionldbfs_cleanup();
+	kfree(f->config);
+}
+
+static void fldbfs_function_enable(struct android_usb_function *f)
+{
+	struct android_dev *dev = f->android_dev;
+	struct functionldbfs_config *config = f->config;
+
+	config->enabled = true;
+
+	/* Disable the gadget until the function is ready */
+	if (!config->opened)
+		android_disable(dev);
+}
+
+static void fldbfs_function_disable(struct android_usb_function *f)
+{
+	struct android_dev *dev = f->android_dev;
+	struct functionldbfs_config *config = f->config;
+
+	config->enabled = false;
+
+	/* Balance the disable that was called in closed_callback */
+	if (!config->opened)
+		android_enable(dev);
+}
+
+static int fldbfs_function_bind_config(struct android_usb_function *f,
+				    struct usb_configuration *c)
+{
+	struct functionldbfs_config *config = f->config;
+	return functionldbfs_bind_config(c->cdev, c, config->data);
+}
+
+static ssize_t
+fldbfs_aliases_show(struct device *pdev, struct device_attribute *attr, char *buf)
+{
+	struct android_dev *dev;
+	int ret;
+
+	dev = list_first_entry(&android_dev_list, struct android_dev,
+					list_item);
+
+	mutex_lock(&dev->mutex);
+	ret = sprintf(buf, "%s\n", dev->fldbfs_aliases);
+	mutex_unlock(&dev->mutex);
+
+	return ret;
+}
+
+static ssize_t
+fldbfs_aliases_store(struct device *pdev, struct device_attribute *attr,
+					const char *buf, size_t size)
+{
+	struct android_dev *dev;
+	char buff[256];
+
+	dev = list_first_entry(&android_dev_list, struct android_dev,
+					list_item);
+	mutex_lock(&dev->mutex);
+
+	if (dev->enabled) {
+		mutex_unlock(&dev->mutex);
+		return -EBUSY;
+	}
+
+	strlcpy(buff, buf, sizeof(buff));
+	strlcpy(dev->fldbfs_aliases, strim(buff), sizeof(dev->fldbfs_aliases));
+
+	mutex_unlock(&dev->mutex);
+
+	return size;
+}
+
+static DEVICE_ATTR(aliasesldb, S_IRUGO | S_IWUSR, fldbfs_aliases_show,
+					       fldbfs_aliases_store);
+static struct device_attribute *fldbfs_function_attributes[] = {
+	&dev_attr_aliasesldb,
+	NULL
+};
+
+static struct android_usb_function fldbfs_function = {
+	.name		= "fldbfs",
+	.init		= fldbfs_function_init,
+	.enable		= fldbfs_function_enable,
+	.disable	= fldbfs_function_disable,
+	.cleanup	= fldbfs_function_cleanup,
+	.bind_config	= fldbfs_function_bind_config,
+	.attributes	= fldbfs_function_attributes,
+};
+
+static int functionldbfs_ready_callback(struct fldbfs_data *fldbfs)
+{
+//lenovo.sw yexh1 (do switching adb option) solve the mutex is not working when ffs_function.android_dev is null,
+// which will cause phone crash PC is at collect_langs. 
+	//yexh1 struct android_dev *dev = fldbfs_function.android_dev;;
+        struct android_dev *dev = _android_dev;
+//lenovo.sw yexh1 end
+
+	struct functionldbfs_config *config = fldbfs_function.config;
+	int ret = 0;
+
+	if (dev) {
+		ret = functionldbfs_bind(fldbfs, dev->cdev);
+		if (ret)
+			return ret;
+	}
+
+	/* dev is null in case ADB is not in the composition */
+	if (dev)
+		mutex_lock(&dev->mutex);
+
+	config->data = fldbfs;
+	config->opened = true;
+
+	if (config->enabled && dev)
+		android_enable(dev);
+
+	if (dev)
+		mutex_unlock(&dev->mutex);
+
+	return 0;
+}
+
+static void functionldbfs_closed_callback(struct fldbfs_data *fldbfs)
+{
+
+//lenovo.sw yexh1 (do switching adb option) solve the mutex is not working when ffs_function.android_dev is null,
+// which will cause phone crash PC is at collect_langs. 
+	//yexh1 struct android_dev *dev = fldbfs_function.android_dev;;
+        struct android_dev *dev = _android_dev;
+//lenovo.sw yexh1 end
+
+	struct functionldbfs_config *config = fldbfs_function.config;
+
+	/* In case new composition is without ADB, use saved one */
+	if (!dev)
+		dev = config->dev;
+
+	if (!dev)
+		pr_err("adb_closed_callback: config->dev is NULL");
+
+	if (dev)
+		mutex_lock(&dev->mutex);
+
+	config->opened = false;
+
+	if (config->enabled && dev)
+		android_disable(dev);
+
+	config->dev = NULL;
+
+	if (dev)
+		mutex_unlock(&dev->mutex);
+
+	config->opened = false;
+	config->data = NULL;
+
+	functionldbfs_unbind(fldbfs);
+}
+
+static void *functionldbfs_acquire_dev_callback(const char *dev_name)
+{
+	return 0;
+}
+
+static void functionldbfs_release_dev_callback(struct fldbfs_data *fldbfs_data)
+{
+}
+
+//lenovo sw, yexh1 add for ldb interface 20140814 end
 
 /* ACM */
 static char acm_transports[32];	/*enabled ACM ports - "tty[,sdio]"*/
@@ -1931,10 +2179,26 @@ ptp_function_bind_config(struct android_usb_function *f,
 	return mtp_bind_config(c, true);
 }
 
+struct android_configuration *_android_conf = NULL;
 static int mtp_function_ctrlrequest(struct android_usb_function *f,
 					struct usb_composite_dev *cdev,
 					const struct usb_ctrlrequest *c)
 {
+#ifdef LENOVO_MS_OS_DESCRIPTOR
+	struct android_usb_function_holder *f_count;
+	struct android_configuration *conf = _android_conf;
+	int	   functions_no=0;
+	char   usb_function_string[32];
+	char  *buff = usb_function_string;
+
+	list_for_each_entry(f_count, &conf->enabled_functions, enabled_list)
+	{
+		functions_no++;
+		buff += sprintf(buff, "%s,", f_count->f->name);
+	}
+	*(buff-1) = '\n';
+	mtp_read_usb_functions(functions_no, usb_function_string);
+#endif
 	return mtp_ctrlrequest(cdev, c);
 }
 
@@ -2407,7 +2671,10 @@ static int mass_storage_function_init(struct android_usb_function *f,
 	int err;
 	int i, n;
 	char name[FSG_MAX_LUNS][MAX_LUN_NAME];
-	u8 uicc_nluns = dev->pdata ? dev->pdata->uicc_nluns : 0;
+
+//lenovo sw yexh1, we are not use qrd solution, set uicc_nluns to 0
+	u8 uicc_nluns = 0; //dev->pdata ? dev->pdata->uicc_nluns : 0;
+//lenovo sw yexh1, end
 
 	config = kzalloc(sizeof(struct mass_storage_function_config),
 							GFP_KERNEL);
@@ -2418,7 +2685,9 @@ static int mass_storage_function_init(struct android_usb_function *f,
 
 	config->fsg.nluns = 1;
 	snprintf(name[0], MAX_LUN_NAME, "lun");
-	config->fsg.luns[0].removable = 1;
+	config->fsg.luns[0].removable = 0;
+	config->fsg.luns[0].cdrom = 1;
+	config->fsg.luns[0].ro = 1;
 
 	if (dev->pdata && dev->pdata->cdrom) {
 		config->fsg.luns[config->fsg.nluns].cdrom = 1;
@@ -2781,6 +3050,9 @@ static struct android_usb_function uasp_function = {
 
 static struct android_usb_function *supported_functions[] = {
 	&ffs_function,
+//lenovo sw, yexh1 add for ldb interface 20140814
+	&fldbfs_function,
+//lenovo sw, yexh1 add for ldb interface 20140814 end
 	&mbim_function,
 	&ecm_qc_function,
 #ifdef CONFIG_SND_PCM
@@ -3087,6 +3359,11 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	int is_ffs;
 	int ffs_enabled = 0;
 
+//lenovo sw, yexh1 add for ldb interface 20140814
+	int is_fldbfs;
+	int fldbfs_enabled = 0;
+//lenovo sw, yexh1 add for ldb interface 20140814 end
+
 	mutex_lock(&dev->mutex);
 
 	if (dev->enabled) {
@@ -3111,6 +3388,12 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 	strlcpy(buf, buff, sizeof(buf));
 	b = strim(buf);
 
+
+//lenovo sw yexh1 add for print usb composite setting
+       pr_info("usb %s: %s\n", __func__, buff);
+//lenovo sw yexh1 add end
+
+
 	while (b) {
 		conf_str = strsep(&b, ":");
 		if (!conf_str)
@@ -3125,6 +3408,7 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 			conf = alloc_android_config(dev);
 
 		curr_conf = curr_conf->next;
+		_android_conf = conf;
 		while (conf_str) {
 			name = strsep(&conf_str, ",");
 			is_ffs = 0;
@@ -3154,6 +3438,29 @@ functions_store(struct device *pdev, struct device_attribute *attr,
 			if (!strcmp(name, "rndis") &&
 				!strcmp(strim(rndis_transports), "BAM2BAM_IPA"))
 				name = "rndis_qc";
+//lenovo sw, yexh1 add for ldb interface 20140814
+			is_fldbfs = 0;			
+			strlcpy(aliases, dev->fldbfs_aliases, sizeof(aliases));
+			a = aliases;
+			while (a) {
+				char *alias = strsep(&a, ",");
+				if (alias && !strcmp(name, alias)) {
+					is_fldbfs = 1;
+					break;
+				}
+			}
+			if (is_fldbfs) {
+				if (fldbfs_enabled)
+					continue;
+				err = android_enable_function(dev, conf, "fldbfs");
+				if (err)
+					pr_err("android_usb: Cannot enable fldbfs (%d)",
+									err);
+				else
+					fldbfs_enabled = 1;
+				continue;
+			}
+//lenovo sw, yexh1 add for ldb interface 20140814 end
 
 			err = android_enable_function(dev, conf, name);
 			if (err)
@@ -3446,6 +3753,7 @@ static void android_unbind_config(struct usb_configuration *c)
 	android_unbind_enabled_functions(dev, c);
 }
 
+static int is_testmode = 0;
 static int android_bind(struct usb_composite_dev *cdev)
 {
 	struct android_dev *dev;
@@ -3488,12 +3796,16 @@ static int android_bind(struct usb_composite_dev *cdev)
 		return id;
 	strings_dev[STRING_PRODUCT_IDX].id = id;
 	device_desc.iProduct = id;
+	if(is_testmode == 1)
+		device_desc.iSerialNumber = 0;
 
+#if 0
 	/* Default strings - should be updated by userspace */
 	strlcpy(manufacturer_string, "Android",
 		sizeof(manufacturer_string) - 1);
 	strlcpy(product_string, "Android", sizeof(product_string) - 1);
 	strlcpy(serial_string, "0123456789ABCDEF", sizeof(serial_string) - 1);
+#endif
 
 	id = usb_string_id(cdev);
 	if (id < 0)
@@ -3913,7 +4225,8 @@ static int android_probe(struct platform_device *pdev)
 		android_dev->idle_pc_rpm_no_int_secs = IDLE_PC_RPM_NO_INT_SECS;
 	}
 	strlcpy(android_dev->pm_qos, "high", sizeof(android_dev->pm_qos));
-
+	_android_dev = android_dev;
+	android_dev_flag = 1;
 	return ret;
 err_probe:
 	android_destroy_device(android_dev);
@@ -3960,6 +4273,8 @@ static int android_remove(struct platform_device *pdev)
 		android_class = NULL;
 		usb_composite_unregister(&android_usb_driver);
 	}
+	_android_dev = NULL;
+	android_dev_flag = 0;
 
 	return 0;
 }
@@ -4019,3 +4334,10 @@ static void __exit cleanup(void)
 	platform_driver_unregister(&android_platform_driver);
 }
 module_exit(cleanup);
+
+static int __init early_testmode(char *p)
+{
+	is_testmode = simple_strtoul(p,NULL,0);
+	return 0;
+}
+early_param("testmode",early_testmode);

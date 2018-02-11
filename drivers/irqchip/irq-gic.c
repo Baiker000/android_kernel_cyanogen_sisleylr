@@ -269,6 +269,10 @@ void gic_show_pending_irq(void)
 
 static void gic_show_resume_irq(struct gic_chip_data *gic)
 {
+	//yangjq, 20130619, Add log to show wakeup interrupts
+#ifdef CONFIG_LENOVO_PM_LOG
+	extern int save_irq_wakeup_gpio(int irq, int gpio);
+#endif
 	unsigned int i;
 	u32 enabled;
 	u32 pending[32];
@@ -298,6 +302,11 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 
 		pr_warning("%s: %d triggered %s\n", __func__,
 					i + gic->irq_offset, name);
+
+		//yangjq, 20130619, Add log to show wakeup interrupts
+#ifdef CONFIG_LENOVO_PM_LOG
+		save_irq_wakeup_gpio(i + gic->irq_offset, 0);
+#endif
 	}
 }
 

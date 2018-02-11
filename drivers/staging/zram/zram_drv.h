@@ -30,9 +30,9 @@ static const unsigned max_num_devices = 32;
 
 /*
  * Pages that compress to size greater than this are stored
- * uncompressed in memory.
+ * uncompressed in memory. Lenovo-sw wuzb1 2014-11-21 modify max page.
  */
-static const size_t max_zpage_size = PAGE_SIZE / 10 * 9;
+static const size_t max_zpage_size = PAGE_SIZE / 4 * 3;
 
 /*
  * NOTE: max_zpage_size must be less than or equal to:

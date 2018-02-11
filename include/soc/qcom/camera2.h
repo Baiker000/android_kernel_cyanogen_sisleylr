@@ -45,6 +45,10 @@ struct msm_camera_slave_info {
 	uint16_t sensor_slave_addr;
 	uint16_t sensor_id_reg_addr;
 	uint16_t sensor_id;
+	/*lenovo-sw chenglong1 add for obtaining module id*/
+	uint16_t need_check_mid;
+	uint16_t module_id;
+	/*lenovo-sw add end*/
 };
 
 struct msm_cam_clk_info {

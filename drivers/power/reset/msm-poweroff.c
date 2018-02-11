@@ -31,6 +31,7 @@
 #include <soc/qcom/scm.h>
 #include <soc/qcom/restart.h>
 #include <soc/qcom/watchdog.h>
+#include <soc/qcom/socinfo.h> //lenovo.sw jixj add for of_board_is_sisley()
 
 #define EMERGENCY_DLOAD_MAGIC1    0x322A4F99
 #define EMERGENCY_DLOAD_MAGIC2    0xC67E4350
@@ -148,6 +149,34 @@ static void enable_emergency_dload_mode(void)
 		pr_err("Failed to set secure EDLOAD mode: %d\n", ret);
 }
 
+static int emergent_restart;
+extern int qpnp_pon_set_emergent_restart_mode(void);
+static int emergent_restart_set(const char *val, struct kernel_param *kp)
+{
+	int ret;
+	int old_val = emergent_restart;
+
+	/* it has been set the emergent_restart mode */
+	if (emergent_restart)
+		return 0;
+
+	ret = param_set_int(val, kp);
+	if (ret)
+		return ret;
+	/* If emergent_restart is not zero or one, ignore. */
+	if (emergent_restart >> 1) {
+		emergent_restart = old_val;
+		return -EINVAL;
+	}
+
+	qpnp_pon_set_emergent_restart_mode();
+
+	return 0;
+}
+
+module_param_call(emergent_restart, emergent_restart_set, param_get_int,
+		&emergent_restart, 0644);
+
 static int dload_set(const char *val, struct kernel_param *kp)
 {
 	int ret;
@@ -212,6 +241,8 @@ static void halt_spmi_pmic_arbiter(void)
 	}
 }
 
+void qpnp_poweroff_last_reg(int poweroff);
+
 static void msm_restart_prepare(const char *cmd)
 {
 #ifdef CONFIG_MSM_DLOAD_MODE
@@ -224,12 +255,34 @@ static void msm_restart_prepare(const char *cmd)
 	set_dload_mode(download_mode &&
 			(in_panic || restart_mode == RESTART_DLOAD));
 #endif
-
+	qpnp_poweroff_last_reg(0);
 	/* Hard reset the PMIC unless memory contents must be maintained. */
-	if (get_dload_mode() || (cmd != NULL && cmd[0] != '\0'))
+	if (get_dload_mode() || (cmd != NULL && cmd[0] != '\0')) {
+		/*lenovo-sw jixj 2014.9.12 modified begin for sisley MBA load modem failed*/
+		#if 0
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
-	else
-		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+		#else
+		//reboot from android shutdown menu,cmd=GlobalActions
+		if(of_board_is_sisley() && (cmd != NULL &&!strncmp(cmd, "GlobalActions", 13))) {
+		    qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+		} else {
+		    qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
+		}
+		#endif
+		/*lenovo-sw jixj 2014.9.12 modified end*/
+	} else {
+		/*lenovo-sw jixj 2014.9.12 modified begin for sisley MBA load modem failed*/
+		#if 0
+		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
+		#else
+		if(of_board_is_sisley()) {
+		    qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+		} else {
+		    qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
+		}
+		#endif
+		/*lenovo-sw jixj 2014.9.12 modified end*/
+	}
 
 	if (cmd != NULL) {
 		if (!strncmp(cmd, "bootloader", 10)) {
@@ -238,6 +291,10 @@ static void msm_restart_prepare(const char *cmd)
 			__raw_writel(0x77665502, restart_reason);
 		} else if (!strcmp(cmd, "rtc")) {
 			__raw_writel(0x77665503, restart_reason);
+		} else if (!strncmp(cmd, "testmode", 8)) {
+			__raw_writel(0x77665504, restart_reason);
+		} else if (!strncmp(cmd, "dloadmode", 9)) {
+			set_dload_mode(1);
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned long code;
 			int ret;
@@ -337,6 +394,7 @@ static void do_msm_poweroff(void)
 #ifdef CONFIG_MSM_DLOAD_MODE
 	set_dload_mode(0);
 #endif
+	qpnp_poweroff_last_reg(1);
 	qpnp_pon_system_pwr_off(PON_POWER_OFF_SHUTDOWN);
 	/* Needed to bypass debug image on some chips */
 	if (!is_scm_armv8())

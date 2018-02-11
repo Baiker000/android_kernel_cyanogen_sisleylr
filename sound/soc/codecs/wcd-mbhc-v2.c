@@ -172,6 +172,9 @@ static void wcd_program_hs_vref(const struct wcd_mbhc *mbhc)
 	reg_val = ((plug_type_cfg->v_hs_max - HS_VREF_MIN_VAL) / 100);
 
 	dev_dbg(card->dev, "%s: reg_val  = %x\n", __func__, reg_val);
+	/*lenovo-sw,lily8,2015-03-06,some headset can't be detected correctly for upgrade to L,begin*/
+	reg_val = 0x02;
+	/*lenovo-sw,lily8,2015-03-06,some headset can't be detected correctly for upgrade to L,end*/
 	snd_soc_update_bits(codec, MSM8X16_WCD_A_ANALOG_MBHC_BTN3_CTL,
 			0x03, reg_val);
 }
@@ -1061,6 +1064,7 @@ static void wcd_correct_swch_plug(struct work_struct *work)
 			}
 			wrk_complete = false;
 		}
+
 	}
 	if (mbhc->btn_press_intr) {
 		pr_debug("%s: Can be slow insertion of headphone\n", __func__);

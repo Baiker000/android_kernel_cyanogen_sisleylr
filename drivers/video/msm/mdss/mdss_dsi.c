@@ -23,7 +23,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/leds-qpnp-wled.h>
 #include <linux/clk.h>
-
+#include <soc/qcom/socinfo.h>//lenovo jixu add
 #include "mdss.h"
 #include "mdss_panel.h"
 #include "mdss_dsi.h"
@@ -589,19 +589,28 @@ int mdss_dsi_on(struct mdss_panel_data *pdata)
 	/* DSI link clocks need to be on prior to ctrl sw reset */
 	mdss_dsi_clk_ctrl(ctrl_pdata, DSI_LINK_CLKS, 1);
 	mdss_dsi_sw_reset(ctrl_pdata, true);
+	if(of_board_is_sisley()){//lenovo jixu add
+		if (mipi->init_delay)
+			usleep(mipi->init_delay);
+	}
 
 	/*
 	 * Issue hardware reset line after enabling the DSI clocks and data
 	 * data lanes for LP11 init
 	 */
 	if (mipi->lp11_init) {
-		if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
-			pr_debug("reset enable: pinctrl not enabled\n");
+		if(!(of_board_is_sisleyl() ||of_board_is_z2())){ //lenovo.sw2 houdz add: skip "pinctl_set_state"
+			if (mdss_dsi_pinctrl_set_state(ctrl_pdata, true))
+				pr_debug("reset enable: pinctrl not enabled\n");
+		}
 		mdss_dsi_panel_reset(pdata, 1);
 	}
 
 	if (mipi->init_delay)
 		usleep(mipi->init_delay);
+
+	if(of_board_is_sisley())
+		mipi->force_clk_lane_hs=1;//jixu add
 
 	if (mipi->force_clk_lane_hs) {
 		u32 tmp;
@@ -1188,6 +1197,12 @@ int mdss_dsi_register_recovery_handler(struct mdss_dsi_ctrl_pdata *ctrl,
 	return 0;
 }
 
+/*lenovo.sw2 houdz1 add for lcd effect begin*/	
+#ifdef CONFIG_FB_LENOVO_LCD_EFFECT	
+extern int lenovo_lcd_effect_handle(struct mdss_dsi_ctrl_pdata *ctrl_data,struct hal_panel_ctrl_data *hal_ctrl_data);
+#endif
+/*lenovo.sw2 houdz1 add for lcd effect end*/	
+
 static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 				  int event, void *arg)
 {
@@ -1275,6 +1290,19 @@ static int mdss_dsi_event_handler(struct mdss_panel_data *pdata,
 		rc = mdss_dsi_register_recovery_handler(ctrl_pdata,
 			(struct mdss_intf_recovery *)arg);
 		break;
+//	case MDSS_EVENT_INTF_RESTORE:
+//		mdss_dsi_ctrl_phy_restore(ctrl_pdata);
+//		break;
+		
+/*lenovo.sw2 houdz1 add for lcd effect begin*/	
+#ifdef CONFIG_FB_LENOVO_LCD_EFFECT	
+	case MDSS_EVENT_LENOVO_PANEL_EFFECT:
+		pr_info("%s:  MDSS_EVENT_LENOVO_PANEL_EFFECT\n",__func__);
+		rc = lenovo_lcd_effect_handle(ctrl_pdata,(struct hal_panel_ctrl_data *)arg);
+		break;
+#endif
+/*lenovo.sw2 houdz1 add for lcd effect end*/
+
 	default:
 		pr_debug("%s: unhandled event=%d\n", __func__, event);
 		break;
@@ -1374,6 +1402,10 @@ end:
 
 	return dsi_pan_node;
 }
+
+#ifdef CONFIG_FB_LENOVO_LCD_EFFECT
+extern int lenovo_lcd_effect_init(struct mdss_dsi_ctrl_pdata *ctrl_pdata);
+#endif
 
 static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 {
@@ -1502,6 +1534,12 @@ static int mdss_dsi_ctrl_probe(struct platform_device *pdev)
 		pr_err("%s: dsi panel init failed\n", __func__);
 		goto error_pan_node;
 	}
+
+	/*lenovo.sw2 houdz1 add for lenovo lcd effect start*/
+	#ifdef CONFIG_FB_LENOVO_LCD_EFFECT
+		lenovo_lcd_effect_init(ctrl_pdata);
+	#endif
+	/*lenovo.sw2 houdz1 add for lenovo lcd effect end*/	
 
 	rc = dsi_panel_device_register(dsi_pan_node, ctrl_pdata);
 	if (rc) {
@@ -1781,13 +1819,34 @@ int dsi_panel_device_register(struct device_node *pan_node,
 			pr_err("%s:%d, Disp_en gpio not specified\n",
 					__func__, __LINE__);
 	}
+	//lenovo.sw2 houdz add 
+	ctrl_pdata->bl_outdoor_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+		"qcom,platform-outdoor-gpio", 0);
+	if (!gpio_is_valid(ctrl_pdata->bl_outdoor_gpio))
+		pr_err("%s:%d, bl_outdoor_gpio gpio not specified\n",
+						__func__, __LINE__);
+	//lenovo.sw2 houdz add end
 
+	ctrl_pdata->disp_vsp_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+		"qcom,platform-vsp-gpio", 0);
+
+	if (!gpio_is_valid(ctrl_pdata->disp_vsp_gpio))
+		pr_err("%s:%d, Disp_vsp gpio not specified\n",
+						__func__, __LINE__);
+
+	ctrl_pdata->disp_vsn_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
+		"qcom,platform-vsn-gpio", 0);
+
+	if (!gpio_is_valid(ctrl_pdata->disp_vsn_gpio))
+		pr_err("%s:%d, Disp_vsn gpio not specified\n",
+						__func__, __LINE__);
+						
 	ctrl_pdata->disp_te_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
 		"qcom,platform-te-gpio", 0);
 
 	if (!gpio_is_valid(ctrl_pdata->disp_te_gpio))
 		pr_err("%s:%d, TE gpio not specified\n",
-						__func__, __LINE__);
+						__func__, __LINE__);						
 
 	ctrl_pdata->bklt_en_gpio = of_get_named_gpio(ctrl_pdev->dev.of_node,
 		"qcom,platform-bklight-en-gpio", 0);

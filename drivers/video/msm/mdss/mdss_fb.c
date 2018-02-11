@@ -54,6 +54,10 @@
 #include "mdss_fb.h"
 #include "mdss_mdp_splash_logo.h"
 
+#ifdef CONFIG_FB_LENOVO_LCD_EFFECT
+#include "lenovo_lcd_effect/lenovo_fb.h"
+#endif
+
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
 #else
@@ -77,6 +81,7 @@ static u32 mdss_fb_pseudo_palette[16] = {
 
 static struct msm_mdp_interface *mdp_instance;
 
+extern char * get_panel_name(void);
 static int mdss_fb_register(struct msm_fb_data_type *mfd);
 static int mdss_fb_open(struct fb_info *info, int user);
 static int mdss_fb_release(struct fb_info *info, int user);
@@ -497,6 +502,15 @@ static ssize_t mdss_fb_get_idle_notify(struct device *dev,
 
 	return ret;
 }
+static ssize_t mdss_get_panel_name(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret;
+
+	/*ret = snprintf(buf, PAGE_SIZE, "R63319_LH600QH1_LGD_1440_2560_5.98\n");*/
+    ret = snprintf(buf, PAGE_SIZE, get_panel_name());
+	/*ret = snprintf(buf, PAGE_SIZE, "hx8389b_qhd\n");*/
+	return ret;
+}
 
 static ssize_t mdss_fb_get_panel_info(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -520,6 +534,8 @@ static ssize_t mdss_fb_get_panel_info(struct device *dev,
 
 	return ret;
 }
+
+
 
 /*
  * mdss_fb_lpm_enable() - Function to Control LowPowerMode
@@ -654,10 +670,47 @@ static ssize_t mdss_fb_get_doze_mode(struct device *dev,
 	return scnprintf(buf, PAGE_SIZE, "%d\n", mfd->doze_mode);
 }
 
+/*lenovo.sw2 houdz add for "sisley-lite ultra mode" begin*/
+static int g_bl_level=0;
+static ssize_t lenovo_get_bl_gpio_level(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	int ret=0;
+	if(of_board_is_sisleyl()) ret = snprintf(buf, PAGE_SIZE, "%d\n",g_bl_level);
+	return ret;
+}
+
+static ssize_t lenovo_set_bl_gpio_level(struct device *dev, struct device_attribute *attr,
+			 const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	unsigned long index;
+
+	struct mdss_panel_data *pdata;
+
+	if (kstrtoul(buf, 0, &index)) return -EINVAL;
+
+	if(of_board_is_sisleyl())
+	{
+		if (!(mdss_panel_is_power_on(mfd->panel_power_state))) return -EINVAL;
+		pdata = dev_get_platdata(&mfd->pdev->dev);
+		if ((pdata) && (pdata->set_bl_level))
+		{
+			pdata->set_bl_level(pdata, index);
+			g_bl_level = index;
+			pr_info("%s:level = %d\n",__func__,g_bl_level);
+		}
+	}
+	return count;
+}
+/*lenovo.sw2 houdz add for "sisley-lite ultra mode" end*/
+
+
 static DEVICE_ATTR(msm_fb_type, S_IRUGO, mdss_fb_get_type, NULL);
 static DEVICE_ATTR(msm_fb_split, S_IRUGO | S_IWUSR, mdss_fb_show_split,
 					mdss_fb_store_split);
 static DEVICE_ATTR(show_blank_event, S_IRUGO, mdss_mdp_show_blank_event, NULL);
+static DEVICE_ATTR(lcd_name, S_IRUGO | S_IWUSR | S_IWGRP,  mdss_get_panel_name, NULL);
 static DEVICE_ATTR(idle_time, S_IRUGO | S_IWUSR | S_IWGRP,
 	mdss_fb_get_idle_time, mdss_fb_set_idle_time);
 static DEVICE_ATTR(idle_notify, S_IRUGO, mdss_fb_get_idle_notify, NULL);
@@ -669,6 +722,15 @@ static DEVICE_ATTR(msm_fb_thermal_level, S_IRUGO | S_IWUSR,
 static DEVICE_ATTR(always_on, S_IRUGO | S_IWUSR | S_IWGRP,
 	mdss_fb_get_doze_mode, mdss_fb_set_doze_mode);
 
+static DEVICE_ATTR(bl_level, S_IRUGO | S_IWUSR | S_IWGRP, lenovo_get_bl_gpio_level, lenovo_set_bl_gpio_level);//lenovo.sw2 houdz1 add
+#ifdef CONFIG_FB_LENOVO_LCD_EFFECT //lenovo.sw2 houdz1 add
+static DEVICE_ATTR(lenovo_lcd_mode_info, S_IRUGO, lenovo_fb_get_lcd_supported_mode, NULL);
+static DEVICE_ATTR(lenovo_lcd_effect_info, S_IRUGO, lenovo_fb_get_lcd_supported_effect, NULL);
+static DEVICE_ATTR(lenovo_lcd_mode, S_IRUGO | S_IWUSR | S_IWGRP, lenovo_fb_get_mode, lenovo_fb_set_mode);
+static DEVICE_ATTR(lenovo_lcd_effect, S_IRUGO | S_IWUSR | S_IWGRP, lenovo_fb_get_effect, lenovo_fb_set_effect);
+static DEVICE_ATTR(lenovo_lcd_effect_index, S_IRUGO | S_IWUSR | S_IWGRP, lenovo_fb_get_effect_index, lenovo_fb_set_effect_index);
+#endif
+
 static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_type.attr,
 	&dev_attr_msm_fb_split.attr,
@@ -679,6 +741,15 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_src_split_info.attr,
 	&dev_attr_msm_fb_thermal_level.attr,
 	&dev_attr_always_on.attr,
+	&dev_attr_lcd_name.attr,
+#ifdef CONFIG_FB_LENOVO_LCD_EFFECT
+	&dev_attr_lenovo_lcd_mode_info.attr,
+	&dev_attr_lenovo_lcd_effect_info.attr,
+	&dev_attr_lenovo_lcd_mode.attr,
+	&dev_attr_lenovo_lcd_effect.attr,
+	&dev_attr_lenovo_lcd_effect_index.attr,
+#endif
+	&dev_attr_bl_level.attr,//lenovo.sw2 houdz1 add
 	NULL,
 };
 
@@ -748,6 +819,7 @@ static int mdss_fb_probe(struct platform_device *pdev)
 	mfd->ext_ad_ctrl = -1;
 	mfd->bl_level = 0;
 	mfd->bl_scale = 1024;
+	mfd->bl_level_prev_scaled = 0;
 	mfd->bl_min_lvl = 30;
 	mfd->ad_bl_level = 0;
 	mfd->fb_imgType = MDP_RGBA_8888;
@@ -1106,6 +1178,7 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 	pdata = dev_get_platdata(&mfd->pdev->dev);
 
 	if ((pdata) && (pdata->set_backlight)) {
+		mfd->bl_level_prev_scaled = mfd->bl_level_scaled;
 		if (mfd->mdp.ad_calc_bl)
 			(*mfd->mdp.ad_calc_bl)(mfd, temp, &temp,
 							&bl_notify_needed);
@@ -1233,7 +1306,7 @@ static int mdss_fb_unblank_sub(struct msm_fb_data_type *mfd)
 		mutex_lock(&mfd->bl_lock);
 		if (!mfd->bl_updated) {
 			mfd->bl_updated = 1;
-			mdss_fb_set_backlight(mfd, mfd->unset_bl_level);
+			mdss_fb_set_backlight(mfd, mfd->bl_level_prev_scaled);
 		}
 		mutex_unlock(&mfd->bl_lock);
 	}
@@ -3220,6 +3293,37 @@ static int __ioctl_wait_idle(struct msm_fb_data_type *mfd, u32 cmd)
  * of the mdss framebuffer ioctl. This function can be called
  * by compat ioctl or regular ioctl to handle the supported commands.
  */
+ 
+ /*lenovo.sw2 add for lcd effect begin*/
+#ifdef CONFIG_FB_LENOVO_LCD_EFFECT
+int lenovo_fb_panel_effect(struct msm_fb_data_type *mfd,unsigned long *argp)
+{
+	int ret = -ENOSYS,rc;
+	struct hal_panel_ctrl_data data;
+
+	ret = copy_from_user(&data, argp,sizeof(data));
+	if (ret) {
+		pr_err("%s:copy_from_user failed", __func__);
+		return ret;
+	}
+
+	pr_info("%s:before mdss_fb_send_panel_event\n",__func__);
+	ret = mdss_fb_send_panel_event(mfd, MDSS_EVENT_LENOVO_PANEL_EFFECT,&data);
+
+	pr_info("%s:after mdss_fb_send_panel_event\n",__func__);
+
+	rc = copy_to_user(argp, &data, sizeof(data));
+	if (rc) {	
+		pr_err("%s:copy_to_user failed", __func__);
+		return rc;
+	}
+
+	return ret;
+}
+	
+#endif
+ /*lenovo.sw2 add for lcd effect end*/
+	
 int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 			 unsigned long arg)
 {
@@ -3310,6 +3414,13 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 
 		ret = mdss_fb_lpm_enable(mfd, dsi_mode);
 		break;
+	/*lenovo.sw2 add for lcd effect begin*/
+	#ifdef CONFIG_FB_LENOVO_LCD_EFFECT
+	case MSMFB_PANEL_EFFECT:
+		ret = lenovo_fb_panel_effect(mfd, argp);
+		break;
+	#endif
+	/*lenovo.sw2 add for lcd effect end*/
 
 	default:
 		if (mfd->mdp.ioctl_handler)

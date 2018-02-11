@@ -572,13 +572,41 @@ void msm_mpm_exit_sleep(bool from_idle)
 		if (MSM_MPM_DEBUG_PENDING_IRQ & msm_mpm_debug_mask)
 			pr_info("%s: enabled_intr.%d pending.%d: 0x%08x 0x%08lx\n",
 				__func__, i, i, enabled_intr[i], pending);
-
+		/* LENOVO.sw begin 20140620 chenyb1 add for print wakeup irq and GPIO */
+#ifdef CONFIG_LENOVO_PM_LOG
+		if (pending)
+		{
+			pr_info("%s: enabled_intr.%d pending.%d: 0x%08x 0x%08lx\n",
+				__func__, i, i, enabled_intr[i], pending);
+		}
+#endif
+		/* LENOVO.sw end 20140620 chenyb1 add for print wakeup irq and GPIO */
 		k = find_first_bit(&pending, 32);
 		while (k < 32) {
 			unsigned int mpm_irq = 32 * i + k;
 			unsigned int apps_irq = msm_mpm_get_irq_m2a(mpm_irq);
 			struct irq_desc *desc = apps_irq ?
 				irq_to_desc(apps_irq) : NULL;
+
+			/* LENOVO.sw begin 20140620 chenyb1 add for print wakeup irq and GPIO */
+#ifdef CONFIG_LENOVO_PM_LOG
+			struct irq_data *irq_data = irq_get_irq_data(apps_irq);
+			if (desc)
+			{
+				#ifdef CONFIG_KALLSYMS
+				printk("%s(), mpm_irq=%d, apps_irq=%d, gpio=%ld, %s, handler=(%pS)\n",
+					__func__, mpm_irq, apps_irq, irq_data->hwirq,
+					desc->action && desc->action->name ? desc->action->name : "",
+					desc->action ? (void *)desc->action->handler : 0);
+				#else
+				printk("%s(), mpm_irq=%d, apps_irq=%d, gpio=%ld, %s, handler=0x%08x\n",
+					__func__, mpm_irq, apps_irq, irq_data->hwirq,
+					desc->action && desc->action->name ? desc->action->name : "",
+					desc->action ? (unsigned int)desc->action->handler : 0);
+				#endif
+			}
+#endif //#ifdef CONFIG_LENOVO_PM_LOG
+			/* LENOVO.sw begin 20140620 chenyb1 add for print wakeup irq and GPIO */
 
 			if (desc && !irqd_is_level_type(&desc->irq_data)) {
 				irq_set_pending(apps_irq);

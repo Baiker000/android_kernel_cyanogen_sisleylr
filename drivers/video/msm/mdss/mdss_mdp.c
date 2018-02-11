@@ -62,6 +62,10 @@
 
 struct mdss_data_type *mdss_res;
 
+char lcd_panel_name[256];
+char *get_panel_name(void);
+
+
 static int mdss_fb_mem_get_iommu_domain(void)
 {
 	return mdss_get_iommu_domain(MDSS_IOMMU_DOMAIN_UNSECURE);
@@ -1330,6 +1334,15 @@ static int mdss_mdp_parse_dt_pan_intf(struct platform_device *pdev)
 	}
 	return rc;
 }
+static void set_panel_name(char * name)
+{
+	strcpy(lcd_panel_name,name);
+}
+
+char *get_panel_name(void)
+{
+	return lcd_panel_name;
+}
 
 static int mdss_mdp_get_cmdline_config(struct platform_device *pdev)
 {
@@ -1351,6 +1364,7 @@ static int mdss_mdp_get_cmdline_config(struct platform_device *pdev)
 
 	if (len > 0) {
 		rc = mdss_mdp_get_pan_cfg(pan_cfg);
+		set_panel_name(panel_name);
 		if (!rc) {
 			pan_cfg->init_done = true;
 			return rc;
