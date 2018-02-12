@@ -46,11 +46,11 @@ struct bootloader_message {
 
 /* TODO: device names/partition numbers are unstable. Add support for looking
  * by GPT partition UUIDs */
-static char *bootdev = "sda";
+static char *bootdev = "mmcblk0";
 module_param(bootdev, charp, S_IRUGO);
 MODULE_PARM_DESC(bootdev, "Block device for bootloader communication");
 
-static int partno;
+static int partno = 25;
 module_param(partno, int, S_IRUGO);
 MODULE_PARM_DESC(partno, "Partition number for bootloader communication");
 
