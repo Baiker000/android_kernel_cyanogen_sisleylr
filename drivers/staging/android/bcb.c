@@ -54,7 +54,7 @@ static int partno;
 module_param(partno, int, S_IRUGO);
 MODULE_PARM_DESC(partno, "Partition number for bootloader communication");
 
-static int device_match(struct device *dev, void *data)
+static int device_match(struct device *dev, const void *data)
 {
 	if (strcmp(dev_name(dev), bootdev) == 0)
 		return 1;
