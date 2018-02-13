@@ -74,7 +74,10 @@ dtb-$(CONFIG_ARCH_MSM8916) += msm8916-sim.dtb \
 	msm8936-mtp-smb1360.dtb \
 	msm8936-mtp-wcd9306.dtb \
 	msmtellurium-sim.dtb \
-	msmtellurium-rumi.dtb \
+	msmtellurium-rumi.dtb
+dtb-$(CONFIG_PRODUCT_Z2) += msm8916-z2.dtb
+dtb-$(CONFIG_PRODUCT_SISLEY) += msm8916-sisley.dtb
+dtb-$(CONFIG_PRODUCT_SISLEYL) += msm8916-sisleyl.dtb \
 	msm8929-cdp.dtb \
 	msm8929-mtp.dtb \
 	msm8929-mtp-smb1360.dtb \

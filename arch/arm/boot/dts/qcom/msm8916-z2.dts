@@ -12,15 +12,15 @@
 
 /dts-v1/;
 
-#include "msm8916-mtp.dtsi"
+#include "msm8916-mtp-z2.dtsi"
 #include "msm8916-memory.dtsi"
 
 / {
-	model = "Qualcomm Technologies, Inc. MSM 8916 MTP";
-	compatible = "qcom,msm8916-mtp", "qcom,msm8916", "qcom,mtp";
-	qcom,board-id = <8 0>;
+	model = "Qualcomm Technologies, Inc. MSM 8916 MTP Z2";
+	compatible = "qcom,msm8916-mtp", "qcom,msm8916", "qcom,mtp", "lenovo,z2";
+	qcom,board-id = <8 0x21>;
 };
-/*lenovo-sw molg1 add 20141111 begin*/
+
 &tlmm_pinmux {
 		apds9930_int_pin {
 			qcom,pins = <&gp 113>;
@@ -32,7 +32,22 @@
 				bias-pull-up;
 			};
 		};
+
+	hall_int_pin {
+		qcom,pins = <&gp 34>;
+		qcom,pin-func = <0>;
+		qcom,num-grp-pins = <1>;
+		label = "hall-irq";
+		hall_int_pin_on: hall_pinctrl1 {
+			drive-strenghth = <2>;
+			bias-disable;
+		};
+		hall_int_pin_off: hall_pinctrl2 {
+			drive-strenghth = <2>;
+			bias-disable;
+		};
 	};
+};
 
 &i2c_0 { /* BLSP1 QUP2 */
 		avago@39 {
@@ -64,7 +79,6 @@
 		};
 	/*lenovo-sw molg 20140428 add end*/
 };
-/*lenovo-sw molg1 add 20141111 end*/
 
 &i2c_4 {
 		sn3193@68 {
@@ -125,22 +139,120 @@
         };	
 };
 
-#include "dsi-panel-d53d6ea8061v-720p-video-magna-lenovo.dtsi"
+&sdhc_2 {
+  status = "disabled";
+};
+
+/* add by lenovo-sw2 lumy1 begin*/
+&i2c_6 { /* BLSP1 QUP6 */
+	6-0028@28 {
+		compatible = "nxp,nfc-547";
+		reg = <0x28>;
+          /*
+		qcom,irq-gpio = <&msm_gpio 21 0x00>;
+		qcom,dis-gpio = <&msm_gpio 20 0x00>;
+		qcom,clk-src = "BBCLK2";
+		qcom,clk-en-gpio = <&msm_gpio 0 0x00>;
+          */
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <21 0>;
+          /*
+		interrupt-names = "nfc_irq";
+		pinctrl-names = "nfc_active","nfc_suspend";
+		pinctrl-0 = <&nfc_int_active &nfc_disable_active>;
+		pinctrl-1 = <&nfc_int_suspend &nfc_disable_suspend>;
+		*/
+		nxp-nfc-547,irq-gpio = <&msm_gpio 21 0x00>;
+		nxp-nfc-547,ven-gpio = <&msm_gpio 20 0x00>;
+		nxp-nfc-547,firm-gpio = <&msm_gpio 114 0x00>;
+		qcom,clk-gpio = <&pm8916_gpios 2 0>;
+		clocks = <&clock_rpm clk_bb_clk2_pin>;
+		clock-names = "nfc_clk";
+	};
+};
+/* add by lenovo-sw2 lumy1 end*/
+
+/* add bylenovo-sw2 houdz1 begin*/
+#include "lenovo-tianma-dsi-panel-hx8394d-720p-video.dtsi"
+#include "lenovo-boe-dsi-panel-nt35521-720p-video.dtsi"
+#include "lenovo-boe-panel-mode-z2.dtsi"
+#include "lenovo-boe-panel-gamma-z2.dtsi"
+#include "lenovo-tianma-panel-mode-z2.dtsi"
+#include "lenovo-tianma-panel-gamma-z2.dtsi"
+
+
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
 };
-&pmx_mdss {
-	qcom,num-grp-pins = <4>;
-	qcom,pins = <&gp 25>, <&gp 76>,<&gp 97>, <&gp 98>;
+&dsi_nt35521_boe_720_vid {
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	lenovo,panel_id = <0>;
+			/*qcom,mdss-dsi-bl-pmic-pwm-frequency = <100>;
+			qcom,mdss-dsi-bl-pmic-bank-select = <0>;
+			qcom,mdss-dsi-pwm-gpio = <&pm8916_mpps 4 0>;*/
 };
+
+			
+&dsi_hx8394d_tianma_720p_video{
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	lenovo,panel_id = <1>;
+			/*qcom,mdss-dsi-bl-pmic-pwm-frequency = <100>;
+			qcom,mdss-dsi-bl-pmic-bank-select = <0>;
+			qcom,mdss-dsi-pwm-gpio = <&pm8916_mpps 4 0>;*/
+};
+
+
+			
+&pmx_mdss {
+	qcom,num-grp-pins = <2>;
+	qcom,pins = <&gp 25>,<&gp 98>;
+};
+
+&pmx_mdss_z2 {
+	qcom,num-grp-pins = <2>;
+	qcom,pins =  <&gp 76>,<&gp 97>;
+};
+			
 &mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_d53d6ea8061v_720p_video_magna_lenovo>;
+	qcom,dsi-pref-prim-pan = <&dsi_nt35521_boe_720_vid>;
 	pinctrl-names = "mdss_default", "mdss_sleep";
-	pinctrl-0 = <&mdss_dsi_active>;
-	pinctrl-1 = <&mdss_dsi_suspend>;
+	pinctrl-0 = <&mdss_dsi_active &mdss_dsi_active_z2>;
+	pinctrl-1 = <&mdss_dsi_suspend &mdss_dsi_suspend_z2>;
+			
 	qcom,platform-reset-gpio = <&msm_gpio 25 0>;
+			
 	qcom,platform-vsp-gpio = <&msm_gpio 97 0>;
 	qcom,platform-vsn-gpio = <&msm_gpio 76 0>;
 	qcom,platform-bklight-en-gpio = <&msm_gpio 98 0>;
 };
+
+/* add bylenovo-sw2 houdz1 end*/
+
+&soc {
+	hall {
+		status = "okay";
+		compatible = "lenovo,hall";
+		vdd-supply = <&pm8916_l5>;
+		interrupt-parent = <&msm_gpio>;
+		interrupts = <34 0x00>;
+		lenovo,irq-gpio = <&msm_gpio 34 0x00>;
+		/* pinctrl-states = "default"; */
+		pinctrl-names = "hall_pinctrl_on", "hall_pinctrl_off";
+		pinctrl-0 = <&hall_int_pin_on>;
+		pinctrl-1 = <&hall_int_pin_off>;
+	};
+};
+
+
+/* lenovo-sw yexh1, add for usb driver current setting and otg function, 2014-04-16 add begin */
+&usb_otg{          
+        qcom,hsusb-otg-phy-init-seq = <0x64 0x80 0x6F 0x81 0x20 0x82 0x13 0x83 0xffffffff>;
+	qcom,hsusb-otg-mode = <3>;
+	qcom,usbid-gpio = <&msm_gpio 110 0>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&usbid_default>;
+	vbus_otg-supply = <&bq24296_otg_supply>; //<&pm8916_l16>; // <&smb1360_otg_supply>; //<&pm8916_l16>; //
+};
+/* lenovo-sw yexh1 end */
+
 
