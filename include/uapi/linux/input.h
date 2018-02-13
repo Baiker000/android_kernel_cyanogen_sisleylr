@@ -490,6 +490,8 @@ struct input_keymap_entry {
 #define KEY_GESTURE_SLIDE_V		259
 #define KEY_GESTURE_SLIDE_S		260
 
+#define KEY_SLIDE      260 /* add by lixh10 fo touchpanel gesture function*/
+
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
 #define BTN_MISC		0x100
