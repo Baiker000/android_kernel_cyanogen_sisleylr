@@ -269,6 +269,28 @@ config ARCH_XGENE
 	help
 	  This enables support for AppliedMicro X-Gene SOC Family
 
+config PRODUCT_AIRPLAY
+       bool "for airplay product"
+       help
+        define airplay product
+
+#lenovo huangdra add for Z2(K7 mini) ALL product:Z2T Z2E Z2R Z2W
+config PRODUCT_Z2
+	bool "for Z2(K7 mini) ALL product:Z2T Z2E Z2R Z2W"
+	default n
+	help
+	  define Z2 product
+config PRODUCT_SISLEY
+	bool "for sisley ALL product:sisleyt sisleye sisleyr sisleyrs sisleyw"
+	default n
+	help
+	  define SISLEY product
+config PRODUCT_SISLEYL
+	bool "for sisleyl ALL product:sisleylt sisleyle sisleylr sisleylw"
+	default n
+	help
+	  define SISLEYL product
+
 endmenu
 
 menu "Bus support"
@@ -553,6 +575,11 @@ config SECCOMP
 	  and the task is only allowed to execute a few safe syscalls
 	  defined by each seccomp mode.
 
+config LENOVO_DEBUG_RKM
+	bool "Configure Replay Kernel Message feature for debug"
+	default y
+	help
+	  RKM can replay last kernel dmesglog info after reboot.
 
 endmenu
 
