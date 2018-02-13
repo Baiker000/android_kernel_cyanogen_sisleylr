@@ -67,3 +67,6 @@ obj-$(CONFIG_TI_DRV2667) += ti_drv2667.o
 obj-$(CONFIG_QPNP_MISC) += qpnp-misc.o
 obj-$(CONFIG_QCOM_LIQUID_DOCK)	+= qcom_liquid_dock.o
 obj-y				+= qcom/
+#lenovo-sw jixj 2014.6.10 add for hwid
+obj-y += hw_ver.o
+obj-y += lephone_nv.o
