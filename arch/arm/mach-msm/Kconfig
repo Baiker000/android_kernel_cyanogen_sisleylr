@@ -1050,4 +1050,21 @@ config FSM9900_GSM_NL
 	  The serial port connection can be established to communicate with the
 	  GSM NL module.
 
+
+#lenovo huangdra add for Z2(K7 mini) ALL product:Z2T Z2E Z2R Z2W
+config PRODUCT_Z2
+	bool "for Z2(K7 mini) ALL product:Z2T Z2E Z2R Z2W"
+	default n
+	help
+	  define Z2 product
+config PRODUCT_SISLEY
+	bool "for sisley ALL product:sisleyt sisleye sisleyr sisleyw"
+	default n
+	help
+	  define SISLEY product
+config PRODUCT_SISLEYL
+	bool "for sisleyl ALL product:sisleylt sisleyle sisleylr sisleylw"
+	default n
+	help
+	  define SISLEYL product
 endif
