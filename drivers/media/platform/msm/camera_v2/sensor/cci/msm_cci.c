@@ -60,6 +60,10 @@ static int32_t msm_cci_set_clk_param(struct cci_device *cci_dev,
 			__func__, __LINE__, i2c_freq_mode);
 		return -EINVAL;
 	}
+/*+ljk change i2c speed to 400k*/
+       pr_err("i2c_freq_mode = %d",c_ctrl->cci_info->i2c_freq_mode);
+    i2c_freq_mode = I2C_FAST_MODE;
+/*+end*/    
 	if (cci_dev->master_clk_init[master])
 		return rc;
 	clk_params = &cci_dev->cci_clk_params[i2c_freq_mode];
