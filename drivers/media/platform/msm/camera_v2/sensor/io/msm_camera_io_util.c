@@ -20,6 +20,8 @@
 #include <linux/msm-bus.h>
 #include "msm_camera_io_util.h"
 
+#include <soc/qcom/socinfo.h>//wuyt3 for board compatible
+
 #define BUFF_SIZE_128 128
 
 #undef CDBG
@@ -499,21 +501,31 @@ int msm_camera_config_single_vreg(struct device *dev,
 		pr_err("%s: get failed NULL parameter\n", __func__);
 		goto vreg_get_fail;
 	}
-	if (cam_vreg->type == VREG_TYPE_CUSTOM) {
-		if (cam_vreg->custom_vreg_name == NULL) {
-			pr_err("%s : can't find sub reg name",
-				__func__);
-			goto vreg_get_fail;
-		}
-		vreg_name = cam_vreg->custom_vreg_name;
-	} else {
-		if (cam_vreg->reg_name == NULL) {
+       //wuyt3 for sisley l begin
+       if (of_board_is_sisley()||of_board_is_sisleyl()){   
+               if (cam_vreg->reg_name == NULL) {
 			pr_err("%s : can't find reg name", __func__);
 			goto vreg_get_fail;
 		}
 		vreg_name = cam_vreg->reg_name;
+       }else{
+               if (cam_vreg->type == VREG_TYPE_CUSTOM) {
+                       if (cam_vreg->custom_vreg_name == NULL) {
+                               pr_err("%s : can't find sub reg name",
+                                       __func__); 
+                               goto vreg_get_fail; 
+                       }    
+                       vreg_name = cam_vreg->custom_vreg_name;
+               } else {
+                       if (cam_vreg->reg_name == NULL) { 
+                               pr_err("%s : can't find reg name", __func__);
+                               goto vreg_get_fail;
+                       }
+                       vreg_name = cam_vreg->reg_name;
+               }
 	}
 
+    //wuyt3 for sisley l end
 	if (config) {
 		CDBG("%s enable %s\n", __func__, vreg_name);
 		*reg_ptr = regulator_get(dev, vreg_name);
