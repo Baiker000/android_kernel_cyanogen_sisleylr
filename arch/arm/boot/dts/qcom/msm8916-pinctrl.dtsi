@@ -124,14 +124,14 @@
 		};
 
 		cross-conn-det {
-			qcom,pins = <&gp 120>;
+			qcom,pins = <&gp 91>;/*lily8@lenovo.com*/
 			qcom,num-grp-pins = <1>;
 			qcom,pin-func = <0>;
 			label = "cross-conn-det-sw";
 			cross_conn_det_act: lines_on {
 				drive-strength = <8>;
 				output-low;
-				bias-pull-down;
+				bias-pull-none;
 			};
 			cross_conn_det_sus: lines_off {
 				drive-strength = <2>;
@@ -293,11 +293,11 @@
 				bias-pull-up;
 			};
 		};
-
+/*+ljk modify for camera GPIO*/
 		spi0_active {
 			/* MOSI, MISO, CLK */
-			qcom,pins = <&gp 8>, <&gp 9>, <&gp 11>;
-			qcom,num-grp-pins = <3>;
+			qcom,pins = <&gp 8>, <&gp 9>; //<&gp 11>;
+			qcom,num-grp-pins = <2>;
 			qcom,pin-func = <1>;
 			label = "spi0-active";
 			/* active state */
@@ -309,8 +309,8 @@
 
 		spi0_suspend {
 			/* MOSI, MISO, CLK */
-			qcom,pins = <&gp 8>, <&gp 9>, <&gp 11>;
-			qcom,num-grp-pins = <3>;
+			qcom,pins = <&gp 8>, <&gp 9>; //<&gp 11>;
+			qcom,num-grp-pins = <2>;
 			qcom,pin-func = <0>;
 			label = "spi0-suspend";
 			/* suspended state */
@@ -321,8 +321,8 @@
 		};
 		spi0_cs0_active {
 			/* CS */
-			qcom,pins = <&gp 10>;
-			qcom,num-grp-pins = <1>;
+			qcom,pins = <&gp 8>;//<&gp 10>;
+			qcom,num-grp-pins = <0>;
 			qcom,pin-func = <1>;
 			label = "spi0-cs0-active";
 			spi0_cs0_active: cs0_active {
@@ -334,8 +334,8 @@
 
 		spi0_cs0_suspend {
 			/* CS */
-			qcom,pins = <&gp 10>;
-			qcom,num-grp-pins = <1>;
+			qcom,pins = <&gp 8>;//<&gp 10>;
+			qcom,num-grp-pins = <0>;
 			qcom,pin-func = <0>;
 			label = "spi0-cs0-suspend";
 			spi0_cs0_sleep: cs0_sleep {
@@ -396,6 +396,7 @@
 
 
 
+/*+end*/
 		ice40-spi-usb-pins {
 			qcom,pins = <&gp 0>, <&gp 1>, <&gp 3>, <&gp 114>;
 			qcom,num-grp-pins = <4>;
@@ -634,6 +635,20 @@
 			mdss_dsi_suspend: suspend {
 				drive-strength = <2>; /* 2 mA */
 				bias-pull-down; /* pull down */
+			};
+		};
+		pmx_mdss_z2: pmx_mdss_z2 {
+			label = "mdss-pins_z2";
+			qcom,pin-func = <0>;
+			mdss_dsi_active_z2: active {
+				drive-strength = <2>; /* 8 mA */
+				bias-disable = <0>; /* no pull */
+				output-high;
+			};
+			mdss_dsi_suspend_z2: suspend {
+				drive-strength = <2>; /* 2 mA */
+				bias-pull-down; /* pull down */
+				output-low;
 			};
 		};
 
@@ -1151,8 +1166,8 @@
 		};
 
 		gpio_led_pins {
-			qcom,pins = <&gp 8>, <&gp 9>, <&gp 10>;
-			qcom,num-grp-pins = <3>;
+			qcom,pins = <&gp 8>, <&gp 9>; //<&gp 10>; /*+ljk delete for CAM1_1V0_EN*/
+			qcom,num-grp-pins = <2>;
 			label = "gpio-led-pins";
 			gpio_led_off: led_off {
 				drive-strength = <2>;
@@ -1288,11 +1303,11 @@
 				bias-pull-down; /* PULL DOWN */
 			};
 		};
-
+/*+ljk modify for camera GPIO*/
 		cam_sensor_rear {
-			/* RESET, STANDBY */
-			qcom,pins =  <&gp 35>, <&gp 34>;
-			qcom,num-grp-pins = <2>;
+			/* RESET, AVDD, DVDD, IOVDD */
+			qcom,pins =  <&gp 35>, <&gp 17>, <&gp 10>, <&gp 16>;
+			qcom,num-grp-pins = <4>;
 			qcom,pin-func = <0>;
 			label = "cam-sensor-rear";
 			/* active state */
@@ -1303,9 +1318,9 @@
 		};
 
 		cam_sensor_rear_sleep {
-			/* RESET, STANDBY */
-			qcom,pins =  <&gp 35>, <&gp 34>;
-			qcom,num-grp-pins = <2>;
+			/* RESET, AVDD, DVDD, IOVDD */
+			qcom,pins =  <&gp 35>, <&gp 17>, <&gp 10>, <&gp 16>;
+			qcom,num-grp-pins = <4>;
 			qcom,pin-func = <0>;
 			label = "cam-sensor-rear-sleep";
 			/*suspended state */
@@ -1316,9 +1331,9 @@
 		};
 
 		cam_sensor_front {
-			/* RESET, STANDBY */
-			qcom,pins = <&gp 28>, <&gp 33>;
-			qcom,num-grp-pins = <2>;
+			/* RESET, AVDD, DVDD, IOVDD*/
+			qcom,pins = <&gp 28>, <&gp 93>, <&gp 11>, <&gp 95>;
+			qcom,num-grp-pins = <4>;
 			qcom,pin-func = <0>;
 			label = "cam_sensor_front";
 			/* active state */
@@ -1329,18 +1344,18 @@
 		};
 
 		cam_sensor_front_sleep {
-			/* RESET, STANDBY */
-			qcom,pins = <&gp 28>, <&gp 33>;
-			qcom,num-grp-pins = <2>;
+			/* RESET, AVDD, DVDD, IOVDD*/
+			qcom,pins = <&gp 28>, <&gp 93>, <&gp 11>, <&gp 95>;
+			qcom,num-grp-pins = <4>;
 			qcom,pin-func = <0>;
-			label = "cam-sensor-front-sleep";
+			label = "cam_sensor_front_sleep";
 			/*suspended state */
 			cam_sensor_front_sleep: sleep {
 				drive-strength = <2>; /* 2 MA */
-				bias-pull-down = <0>; /* PULL DOWN */
+				bias-pull-down; /* PULL DOWN */
 			};
 		};
-
+/*+end*/
 		cam_sensor_flash {
 			/* FLASH_RESET,FLASH_EN,FLASH_NOW */
 			qcom,pins = <&gp 36>, <&gp 31>,<&gp 32> ;
@@ -1355,7 +1370,7 @@
 			/*suspended state */
 			cam_sensor_flash_sleep: sleep {
 				drive-strength = <2>; /* 2 MA */
-				bias-pull-down = <0>; /* PULL DOWN */
+				bias-pull-down; /* PULL DOWN */
 			};
 		};
 

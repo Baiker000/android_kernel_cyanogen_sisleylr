@@ -431,6 +431,34 @@
 &mdss_mdp {
 	qcom,mdss-pref-prim-intf = "dsi";
 };
+&dsi_nt35521_boe_720_vid {
+
+    mpp@a100 { /* MPP 2 */
+
+        &dsi_hx8394d_tianma_720p_video{
+
+            lenovo,panel_id = <1>;
+            /*qcom,mdss-dsi-bl-pmic-pwm-frequency = <100>;
+              qcom,mdss-dsi-bl-pmic-bank-select = <0>;
+              qcom,mdss-dsi-pwm-gpio = <&pm8916_mpps 4 0>;*/
+            qcom,master-en = <1>;		/* Enable MPP */
+
+            mpp@a200 { /* MPP 3 */
+                /* VREF DAC */
+
+                &pmx_mdss {
+
+                    &pmx_mdss_z2 {
+                        qcom,num-grp-pins = <2>;
+                        qcom,pins =  <&gp 76>,<&gp 97>;
+#include "dsi-panel-jdi-1080p-video.dtsi"
+
+                        &dsi_jdi_1080_vid {
+                            qcom,mdss-dsi-pwm-gpio = <&pm8916_mpps 4 0>;
+                            qcom,num-grp-pins = <3>;
+                            qcom,pins = <&gp 97>, <&gp 25>, <&gp 98>;
+                            qcom,dsi-pref-prim-pan = <&dsi_jdi_1080_vid>;
+                            qcom,platform-bklight-en-gpio = <&msm_gpio 98 0>;
 
 &dsi_auo_cx_qvga_cmd {
         qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
@@ -472,24 +500,6 @@
 	qcom,cont-splash-enabled;
 };
 
-&pmx_mdss {
-	qcom,num-grp-pins = <2>;
-	qcom,pins = <&gp 25>, <&gp 37>;
-};
-
-&pmx_mdss_te {
-	qcom,num-grp-pins = <1>;
-	qcom,pins = <&gp 24>;
-};
-
-&mdss_dsi0 {
-	qcom,dsi-pref-prim-pan = <&dsi_hx8394d_720_vid>;
-	pinctrl-names = "mdss_default", "mdss_sleep";
-	pinctrl-0 = <&mdss_dsi_active &mdss_te_active>;
-	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
-
-	qcom,platform-reset-gpio = <&msm_gpio 25 0>;
-	qcom,platform-bklight-en-gpio = <&msm_gpio 37 0>;
 };
 
 /* CoreSight */
