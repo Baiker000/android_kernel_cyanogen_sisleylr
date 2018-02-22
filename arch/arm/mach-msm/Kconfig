@@ -1050,10 +1050,4 @@ config FSM9900_GSM_NL
 	  The serial port connection can be established to communicate with the
 	  GSM NL module.
 
-config PRODUCT_SISLEYL
-       bool "for sisleyl ALL product:sisleylt sisleyle sisleylr sisleylw"
-       default n
-       help
-         define SISLEYL product
-
 endif
