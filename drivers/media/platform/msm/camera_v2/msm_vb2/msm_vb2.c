@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2014, 2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -43,6 +43,7 @@ static int msm_vb2_queue_setup(struct vb2_queue *q,
 int msm_vb2_buf_init(struct vb2_buffer *vb)
 {
 	struct msm_stream *stream;
+	struct msm_session *session;
 	struct msm_vb2_buffer *msm_vb2_buf;
 	unsigned long rl_flags;
 
@@ -187,6 +188,7 @@ int msm_vb2_get_stream_state(struct msm_stream *stream)
 	spin_unlock_irqrestore(&stream->stream_lock, flags);
 	return rc;
 }
+EXPORT_SYMBOL(msm_vb2_get_stream_state);
 
 static struct vb2_ops msm_vb2_get_q_op = {
 	.queue_setup	= msm_vb2_queue_setup,
@@ -240,12 +242,13 @@ static struct vb2_buffer *msm_vb2_get_buf(int session_id,
 	unsigned int stream_id)
 {
 	struct msm_stream *stream;
+	struct msm_session *session;
 	struct vb2_buffer *vb2_buf = NULL;
 	struct msm_vb2_buffer *msm_vb2 = NULL;
 	unsigned long flags, rl_flags;
 
-	stream = msm_get_stream(session_id, stream_id);
-	if (IS_ERR_OR_NULL(stream))
+	session = msm_get_session(session_id);
+	if (IS_ERR_OR_NULL(session))
 		return NULL;
 
 	read_lock_irqsave(&session->stream_rwlock, rl_flags);
@@ -286,6 +289,7 @@ static int msm_vb2_put_buf(struct vb2_buffer *vb, int session_id,
 				unsigned int stream_id)
 {
 	struct msm_stream *stream;
+	struct msm_session *session;
 	struct msm_vb2_buffer *msm_vb2;
 	struct vb2_buffer *vb2_buf = NULL;
 	int rc = 0;
@@ -311,7 +315,7 @@ static int msm_vb2_put_buf(struct vb2_buffer *vb, int session_id,
 				break;
 		}
 		if (vb2_buf != vb) {
-			pr_err("VB buffer is INVALID vb=%p, ses_id=%d, str_id=%d\n",
+			pr_err("VB buffer is INVALID vb=%pK, ses_id=%d, str_id=%d\n",
 					vb, session_id, stream_id);
 			spin_unlock_irqrestore(&stream->stream_lock, flags);
 			read_unlock_irqrestore(&session->stream_rwlock, rl_flags);
@@ -340,11 +344,12 @@ static int msm_vb2_buf_done(struct vb2_buffer *vb, int session_id,
 	unsigned long flags, rl_flags;
 	struct msm_vb2_buffer *msm_vb2;
 	struct msm_stream *stream;
+	struct msm_session *session;
 	struct vb2_buffer *vb2_buf = NULL;
 	int rc = 0;
 
-	stream = msm_get_stream(session_id, stream_id);
-	if (IS_ERR_OR_NULL(stream))
+	session = msm_get_session(session_id);
+	if (IS_ERR_OR_NULL(session))
 		return 0;
 
 	read_lock_irqsave(&session->stream_rwlock, rl_flags);
@@ -363,7 +368,7 @@ static int msm_vb2_buf_done(struct vb2_buffer *vb, int session_id,
 				break;
 		}
 		if (vb2_buf != vb) {
-			pr_err("VB buffer is INVALID ses_id=%d, str_id=%d, vb=%p\n",
+			pr_err("VB buffer is INVALID ses_id=%d, str_id=%d, vb=%pK\n",
 				    session_id, stream_id, vb);
 			spin_unlock_irqrestore(&stream->stream_lock, flags);
 			read_unlock_irqrestore(&session->stream_rwlock, rl_flags);
@@ -402,4 +407,3 @@ int msm_vb2_request_cb(struct msm_sd_req_vb2_q *req)
 
 	return 0;
 }
-
