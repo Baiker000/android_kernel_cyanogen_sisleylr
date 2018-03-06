@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -43,7 +43,10 @@ static struct msm_camera_i2c_reg_array lm3642_release_array[] = {
 };
 
 static struct msm_camera_i2c_reg_array lm3642_low_array[] = {
-	{0x0A, 0x22},
+	/*lenovo-sw chenglong1 modify for flash drv*/
+	//{0x0A, 0x22},
+	{0x0A, 0x12},
+	/*lenovo-sw modify end*/
 };
 
 static struct msm_camera_i2c_reg_array lm3642_high_array[] = {
@@ -116,7 +119,7 @@ int msm_flash_lm3642_led_init(struct msm_led_flash_ctrl_t *fctrl)
 		if (rc < 0)
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 	}
-	return 0;
+	return rc;
 }
 
 int msm_flash_lm3642_led_release(struct msm_led_flash_ctrl_t *fctrl)
@@ -125,13 +128,13 @@ int msm_flash_lm3642_led_release(struct msm_led_flash_ctrl_t *fctrl)
 	struct msm_camera_sensor_board_info *flashdata = NULL;
 	struct msm_camera_power_ctrl_t *power_info = NULL;
 
+	flashdata = fctrl->flashdata;
+	power_info = &flashdata->power_info;
 	LM3642_DBG("%s:%d called\n", __func__, __LINE__);
-	if (!fctrl || !fctrl->flashdata) {
+	if (!fctrl) {
 		pr_err("%s:%d fctrl NULL\n", __func__, __LINE__);
 		return -EINVAL;
 	}
-	flashdata = fctrl->flashdata;
-	power_info = &flashdata->power_info;
 
 	gpio_set_value_cansleep(
 		power_info->gpio_conf->gpio_num_info->
@@ -153,14 +156,14 @@ int msm_flash_lm3642_led_off(struct msm_led_flash_ctrl_t *fctrl)
 	struct msm_camera_sensor_board_info *flashdata = NULL;
 	struct msm_camera_power_ctrl_t *power_info = NULL;
 
+	flashdata = fctrl->flashdata;
+	power_info = &flashdata->power_info;
 	LM3642_DBG("%s:%d called\n", __func__, __LINE__);
 
-	if (!fctrl || !fctrl->flashdata) {
+	if (!fctrl) {
 		pr_err("%s:%d fctrl NULL\n", __func__, __LINE__);
 		return -EINVAL;
 	}
-	flashdata = fctrl->flashdata;
-	power_info = &flashdata->power_info;
 
 	if (fctrl->flash_i2c_client && fctrl->reg_setting) {
 		rc = fctrl->flash_i2c_client->i2c_func_tbl->i2c_write_table(
@@ -309,8 +312,41 @@ static struct i2c_driver lm3642_i2c_driver = {
 	},
 };
 
+/*lenovo-sw chenglong1 add for flash drv*/
+static const struct of_device_id lm3642_trigger_dt_match[] = {
+	{.compatible = "ti,lm3642", .data = &fctrl},
+	{}
+};
+
+static int msm_flash_lm3642_platform_probe(struct platform_device *pdev)
+{
+	const struct of_device_id *match;
+	match = of_match_device(lm3642_trigger_dt_match, &pdev->dev);
+	if (!match)
+		return -EFAULT;
+	return msm_flash_probe(pdev, match->data);
+}
+
+
+static struct platform_driver lm3642_platform_driver = {
+	.probe = msm_flash_lm3642_platform_probe,
+	.driver = {
+		.name = "ti,lm3642",
+		.owner = THIS_MODULE,
+		.of_match_table = lm3642_trigger_dt_match,
+	},
+};
+/*lenovo-sw add end*/
+
 static int __init msm_flash_lm3642_init(void)
 {
+	/*lenovo-sw chenglong1 add for flash drv*/
+	int32_t rc = 0;
+	rc = platform_driver_register(&lm3642_platform_driver);
+	LM3642_DBG("%s:%d rc %d   1\n", __func__, __LINE__, rc);
+	if (!rc)
+		return rc;	
+	/*lenovo-sw modify end*/
 	LM3642_DBG("%s entry\n", __func__);
 	return i2c_add_driver(&lm3642_i2c_driver);
 }
@@ -375,7 +411,10 @@ static struct msm_led_flash_reg_t lm3642_regs = {
 	.release_setting = &lm3642_release_setting,
 };
 
-static struct msm_flash_fn_t lm3642_func_tbl = {
+static struct msm_flash_fn_t lm3642_func_tbl = 
+/*lenovo-sw chenglong1 add for flash drv*/
+#if 0
+{
 	.flash_get_subdev_id = msm_led_i2c_trigger_get_subdev_id,
 	.flash_led_config = msm_led_i2c_trigger_config,
 	.flash_led_init = msm_flash_lm3642_led_init,
@@ -384,6 +423,19 @@ static struct msm_flash_fn_t lm3642_func_tbl = {
 	.flash_led_low = msm_flash_lm3642_led_low,
 	.flash_led_high = msm_flash_lm3642_led_high,
 };
+#else
+{
+	.flash_get_subdev_id = msm_led_i2c_trigger_get_subdev_id,
+	.flash_led_config = msm_led_i2c_trigger_config,
+	.flash_led_init = msm_flash_led_init,
+	.flash_led_release = msm_flash_led_release,
+	.flash_led_off = msm_flash_led_off,
+	.flash_led_low = msm_flash_led_low,
+	.flash_led_high = msm_flash_led_high,
+};
+#endif
+/*lenovo-sw add end*/
+
 
 static struct msm_led_flash_ctrl_t fctrl = {
 	.flash_i2c_client = &lm3642_i2c_client,

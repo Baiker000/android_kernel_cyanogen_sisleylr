@@ -110,6 +110,10 @@ enum msm_sensor_power_seq_gpio_t {
 	SENSOR_GPIO_FL_RESET,
 	SENSOR_GPIO_CUSTOM1,
 	SENSOR_GPIO_CUSTOM2,
+       /* Begin add by chensheng1, for HW standby */
+       SENSOR_GPIO_RESET_EX,
+       SENSOR_GPIO_VDIG_EX,
+/* End add by chensheng1, for HW standby */
 	SENSOR_GPIO_MAX,
 };
 
@@ -120,6 +124,9 @@ enum msm_camera_vreg_name_t {
 	CAM_VAF,
 	CAM_V_CUSTOM1,
 	CAM_V_CUSTOM2,
+/*+Begin: ljk for ois power.*/
+       CAM_VOIS,
+/*+End.*/
 	CAM_VREG_MAX,
 };
 
@@ -217,6 +224,10 @@ struct msm_sensor_init_params {
 struct msm_sensor_id_info_t {
 	uint16_t sensor_id_reg_addr;
 	uint16_t sensor_id;
+       /*lenovo-sw chenglong1 add for obtaining module id*/
+       uint16_t need_check_mid;
+       uint16_t module_id;
+       /*lenovo-sw add end*/
 };
 
 struct msm_camera_sensor_slave_info {
@@ -294,6 +305,13 @@ struct msm_camera_i2c_seq_reg_setting {
 	uint16_t delay;
 };
 
+/* Begin add by chensheng1, improve otp performance */
+struct msm_camera_i2c_read_seq_config {
+       uint16_t reg_addr;
+       uint16_t size;
+       uint8_t lenc[62];
+};
+/* End add by chensheng1, improve otp performance */
 struct msm_actuator_reg_params_t {
 	enum msm_actuator_write_type reg_write_type;
 	uint32_t hw_mask;

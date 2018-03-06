@@ -28,6 +28,15 @@
 
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
+/*lenovo-sw weiweij added for airplay changes*/
+#include <linux/wakelock.h>
+#include <linux/workqueue.h>
+#include <linux/rtc.h>
+/*lenovo-sw weiweij added for airplay changes end*/
+
+#ifdef CONFIG_BQ24296_CHARGER
+#include <linux/power/bq24296_charger.h> 
+#endif
 
 #define CREATE_MASK(NUM_BITS, POS) \
 	((unsigned char) (((1 << (NUM_BITS)) - 1) << (POS)))
@@ -209,10 +218,14 @@ static enum power_supply_property msm_batt_power_props[] = {
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_COOL_TEMP,
 	POWER_SUPPLY_PROP_WARM_TEMP,
 	POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL,
+/*lenovo-sw weiweij added for providing message to system info app*/	
+	POWER_SUPPLY_PROP_TECHNOLOGY,
+/*lenovo-sw weiweij added for providing message to system info app end*/		
 };
 
 static char *pm_batt_supplied_to[] = {
@@ -251,6 +264,26 @@ struct vddtrim_map vddtrim_map[] = {
 	{-16800,	0x06},
 	{-25440,	0x07},
 };
+
+/*lenovo-sw weiweij added*/
+/**
+ *calculated_soc: SOC read from the fuel gauge IC
+ *last_soc: SOC which report last time
+ *last_soc_report_time: last soc report time, use this member to calculated the soc report time interval  
+ *charging: if battery is charging
+ *
+ * */
+struct soc_param
+{
+	int calculated_soc;
+	int last_soc;
+	int batt_volt;
+	unsigned long last_soc_change_sec;
+	int shut_down_volt_sec;
+	bool charging;
+	bool start_shut_down_mon;
+};
+/*lenovo-sw weiweij added end*/
 
 /*
  * struct qpnp_lbc_chip - device information
@@ -322,6 +355,9 @@ struct vddtrim_map vddtrim_map[] = {
  */
 struct qpnp_lbc_chip {
 	struct device			*dev;
+/*lenovo-sw weiweij added*/
+	struct soc_param        soc_param; 
+/*lenovo-sw weiweij added edn*/
 	struct spmi_device		*spmi;
 	u16				chgr_base;
 	u16				bat_if_base;
@@ -330,6 +366,9 @@ struct qpnp_lbc_chip {
 	bool				bat_is_cool;
 	bool				bat_is_warm;
 	bool				chg_done;
+/*lenovo-sw weiweij added for airplay changs of linear-charging*/	
+	bool				warm_chg_done;
+/*lenovo-sw weiweij added for airplay changs of linear-charging end*/
 	bool				usb_present;
 	bool				batt_present;
 	bool				cfg_charging_disabled;
@@ -379,6 +418,9 @@ struct qpnp_lbc_chip {
 	int				lbc_max_chg_current;
 	int				ichg_now;
 
+#ifdef CONFIG_BQ24296_CHARGER
+	int				testmode_flag;
+#endif
 	struct alarm			vddtrim_alarm;
 	struct work_struct		vddtrim_work;
 	struct qpnp_lbc_irq		irqs[MAX_IRQS];
@@ -402,6 +444,11 @@ struct qpnp_lbc_chip {
 	/* parallel-chg params */
 	struct power_supply		parallel_psy;
 	struct delayed_work		parallel_work;
+/*lenovo-sw weiweij added for airplay changes*/
+    bool                            dec_cur_bat_cool;
+    struct delayed_work             temp_mon_work;
+    struct wake_lock                temp_mon_wake_lock;
+/*lenovo-sw weiweij added for airplay changes end*/
 };
 
 static void qpnp_lbc_enable_irq(struct qpnp_lbc_chip *chip,
@@ -531,6 +578,19 @@ static int qpnp_lbc_masked_write(struct qpnp_lbc_chip *chip, u16 base,
 	struct spmi_device *spmi = chip->spmi;
 	unsigned long flags;
 
+#ifdef CONFIG_BQ24296_CHARGER
+	if((mask==CHG_EN_MASK)&&(chip->chgr_base + CHG_CTRL_REG==base))
+	{	
+		if(chip->testmode_flag==1)
+			val = 0x01;
+		else
+			val = 0x01;
+		
+		pr_debug("ww_Debug mask=0x%x(0x%x) base=0x%x(0x%x)val=%d\n", (unsigned int) mask, (unsigned int) CHG_EN_MASK, 
+			(unsigned int) base, (unsigned int) (chip->chgr_base + CHG_CTRL_REG), val);
+	}
+#endif
+
 	spin_lock_irqsave(&chip->hw_access_lock, flags);
 	rc = __qpnp_lbc_read(spmi, base, &reg_val, 1);
 	if (rc) {
@@ -639,6 +699,7 @@ static u8 qpnp_lbc_get_trim_val(struct qpnp_lbc_chip *chip)
 	return vddtrim_map[i].trim_val;
 }
 
+static struct qpnp_lbc_chip *tmp_chip=NULL;
 static int qpnp_lbc_is_usb_chg_plugged_in(struct qpnp_lbc_chip *chip)
 {
 	u8 usbin_valid_rt_sts;
@@ -675,6 +736,90 @@ static int qpnp_lbc_is_chg_gone(struct qpnp_lbc_chip *chip)
 	return (rt_sts & CHG_GONE_BIT) ? 1 : 0;
 }
 
+int is_charger_plug_in(void)
+{
+/*lenovo-sw weiweij modified for usb dialog pop*/
+#if 0
+	if(tmp_chip!=NULL)
+		return qpnp_lbc_is_usb_chg_plugged_in(tmp_chip);
+	else 
+		return 0;
+#else
+	int ret;
+
+	if(tmp_chip==NULL)
+	{
+		pr_err("%s temp is null \n", __func__);
+		return 0;
+	}
+
+	ret = qpnp_lbc_is_usb_chg_plugged_in(tmp_chip);
+	if(ret!=0)
+	{
+		struct power_supply	*usb_psy;	
+		union power_supply_propval val;
+
+		usb_psy = power_supply_get_by_name("usb");
+		if (!usb_psy) {
+			pr_err("%s usb supply not found deferring probe\n", __func__);
+			return 0;
+		}	
+
+		usb_psy->get_property(usb_psy, POWER_SUPPLY_PROP_TYPE, &val);	
+		if(val.intval==POWER_SUPPLY_TYPE_USB_DCP)	
+		{
+			printk("%s usb psy charger type is dcp\n", __func__);
+			ret = 0;
+		}	
+	}
+
+	return ret;
+#endif
+/*lenovo-sw weiweij modified for usb dialog pop end*/
+}
+
+#ifdef CONFIG_QPNP_CHARGER_FILE_OPS
+#ifdef CONFIG_LED_OPS
+static int charging_led_ctrl_flag = 1;
+static int charging_led_ctrl_soc = -1;
+#endif
+#endif
+
+#ifdef CONFIG_PMIC_CHARGING_LED
+static int lenovo_pmic_charging_led_en(struct qpnp_lbc_chip *chip, int enble)
+{
+	static int led_on_flag = -1;
+
+#ifdef CONFIG_LED_OPS
+	if(charging_led_ctrl_flag==0)
+	{
+		qpnp_lbc_masked_write(chip, chip->chgr_base + 0x4d,	0x3, 0x00);
+		led_on_flag = 0;
+
+		return -3;
+	}
+#endif
+	
+	if(enble)
+	{
+		if(led_on_flag==1)
+			return -1;
+		
+		qpnp_lbc_masked_write(chip, chip->chgr_base + 0x4d,	0x3, 0x01);
+		led_on_flag = 1;
+	}else
+	{
+		if(led_on_flag==0)
+			return -2;
+		
+		qpnp_lbc_masked_write(chip, chip->chgr_base + 0x4d,	0x3, 0x00);
+		led_on_flag = 0;
+	}
+
+	return 0;
+}
+#endif
+
 static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 					int enable)
 {
@@ -682,7 +827,7 @@ static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 	u8 reg_val;
 	int rc = 0;
 
-	pr_debug("reason=%d requested_enable=%d disabled_status=%d\n",
+	printk("reason=%d requested_enable=%d disabled_status=%d\n",
 					reason, enable, disabled);
 	if (enable)
 		disabled &= ~reason;
@@ -693,8 +838,12 @@ static int qpnp_lbc_charger_enable(struct qpnp_lbc_chip *chip, int reason,
 		goto skip;
 
 	reg_val = !!disabled ? CHG_FORCE_BATT_ON : CHG_ENABLE;
-	rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,
-				CHG_EN_MASK, reg_val);
+#ifdef CONFIG_BQ24296_CHARGER
+	qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,	CHG_EN_MASK, 0x01);
+	chip->charger_disabled = 1;
+#else	
+	rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,	CHG_EN_MASK, reg_val);
+#endif	
 	if (rc) {
 		pr_err("Failed to %s charger rc=%d\n",
 				reg_val ? "enable" : "disable", rc);
@@ -1287,12 +1436,70 @@ static int get_prop_charge_type(struct qpnp_lbc_chip *chip)
 	return POWER_SUPPLY_CHARGE_TYPE_NONE;
 }
 
+/*lenovo-sw weiweij added airplay changes for linear-charger*/
+bool full_capacity = false;
+static bool temp_abnormal = false;
+extern void popup_usb_select_window(int popup);
+/*lenovo-sw weiweij added airplay changes for linear-charger end*/
 static int get_prop_batt_status(struct qpnp_lbc_chip *chip)
 {
 	int rc;
 	u8 reg_val;
+	
+/*lenovo-sw weiweij modified for bq24296 function*/
+#ifdef CONFIG_BQ24296_CHARGER
+	struct power_supply* charger_psy = power_supply_get_by_name("ex-charger");
+	struct power_supply* fg_psy = power_supply_get_by_name("max17058_fgauge");
+	union power_supply_propval ret = {0};
+	int soc = 0;
 
-	if (qpnp_lbc_is_usb_chg_plugged_in(chip) && chip->chg_done)
+	if(charger_psy)
+	{
+		if(fg_psy)
+		{
+			fg_psy->get_property(fg_psy, POWER_SUPPLY_PROP_CAPACITY, &ret);
+			soc = ret.intval;
+			
+			charger_psy->get_property(charger_psy, POWER_SUPPLY_PROP_STATUS, &ret);
+			if(ret.intval==POWER_SUPPLY_STATUS_FULL)
+			{
+				if(soc!=100)
+					ret.intval = POWER_SUPPLY_STATUS_CHARGING;
+			}
+		}
+		else
+		{
+			charger_psy->get_property(charger_psy, POWER_SUPPLY_PROP_STATUS, &ret);
+		}
+		//pr_err("bq24296 state = %d\n", ret.intval);
+		
+		return ret.intval;
+	}
+	else
+	{
+		pr_err("bq24296 charger_psy fail\n");
+	
+		if (qpnp_lbc_is_usb_chg_plugged_in(chip) && (chip->chg_done || full_capacity))
+			return POWER_SUPPLY_STATUS_FULL;
+
+	rc = qpnp_lbc_read(chip, chip->chgr_base + INT_RT_STS_REG,
+				&reg_val, 1);
+	if (rc) {
+		pr_err("Failed to read interrupt sts rc= %d\n", rc);
+		return POWER_SUPPLY_CHARGE_TYPE_NONE;
+	}
+
+		if (reg_val & FAST_CHG_ON_IRQ)
+			return POWER_SUPPLY_STATUS_CHARGING;	
+	}
+#else
+/*lenovo-sw weiweij modified for jeta mode charging status*/
+#if 1
+	if (qpnp_lbc_is_usb_chg_plugged_in(chip) && (chip->chg_done || full_capacity))
+#else
+	if (qpnp_lbc_is_usb_chg_plugged_in(chip) && (chip->chg_done || full_capacity ||(chip->warm_chg_done && chip->bat_is_warm)))
+#endif
+/*lenovo-sw weiweij modified for jeta mode charging status end*/
 		return POWER_SUPPLY_STATUS_FULL;
 
 	rc = qpnp_lbc_read(chip, chip->chgr_base + INT_RT_STS_REG,
@@ -1304,7 +1511,12 @@ static int get_prop_batt_status(struct qpnp_lbc_chip *chip)
 
 	if (reg_val & FAST_CHG_ON_IRQ)
 		return POWER_SUPPLY_STATUS_CHARGING;
+#endif
+/*lenovo-sw weiweij modified for bq24296 function end*/
 
+	if(qpnp_lbc_is_usb_chg_plugged_in(chip) && temp_abnormal == false)
+		return POWER_SUPPLY_STATUS_CHARGING;
+	//popup_usb_select_window(2);
 	return POWER_SUPPLY_STATUS_DISCHARGING;
 }
 
@@ -1312,6 +1524,26 @@ static int get_prop_current_now(struct qpnp_lbc_chip *chip)
 {
 	union power_supply_propval ret = {0,};
 
+/*lenovo-sw weiweij modified for max17058 function*/
+#ifdef CONFIG_MAX17058_FG
+		struct power_supply* fg_psy = power_supply_get_by_name("max17058_fgauge");
+		if(fg_psy)
+		{
+			fg_psy->get_property(fg_psy, POWER_SUPPLY_PROP_CURRENT_NOW, &ret);
+			pr_debug("17058 cur = %d\n", ret.intval);
+
+			return -1*ret.intval*1000;//for apk requesting. report the result of ua.
+		}else
+		{
+			if (chip->bms_psy) {
+				chip->bms_psy->get_property(chip->bms_psy,
+					  POWER_SUPPLY_PROP_CURRENT_NOW, &ret);
+				return ret.intval;
+			} else {
+				pr_debug("No BMS supply registered return 0\n");
+			}
+		}
+#else	
 	if (chip->bms_psy) {
 		chip->bms_psy->get_property(chip->bms_psy,
 			  POWER_SUPPLY_PROP_CURRENT_NOW, &ret);
@@ -1319,35 +1551,234 @@ static int get_prop_current_now(struct qpnp_lbc_chip *chip)
 	} else {
 		pr_debug("No BMS supply registered return 0\n");
 	}
+#endif
+/*lenovo-sw weiweij modified for max17058 function end*/
 
 	return 0;
 }
+
+/*lenovo-sw weiweij added*/
+#define SOC_CHANGE_PER_SEC		5
+#define SHUT_DOWN_VOLT		3400
+#define SHUT_DOWN_VOLT_SEC		60
+#define SOC_NOT_NEED_SMOOTH_SEC		10*60
+static int get_current_time(unsigned long *now_tm_sec)
+{
+	struct rtc_time tm;
+	struct rtc_device *rtc;
+	int rc;
+
+	rtc = rtc_class_open(CONFIG_RTC_HCTOSYS_DEVICE);
+	if (rtc == NULL) {
+		pr_err("%s: unable to open rtc device (%s)\n",
+			__FILE__, CONFIG_RTC_HCTOSYS_DEVICE);
+		return -EINVAL;
+	}
+
+	rc = rtc_read_time(rtc, &tm);
+	if (rc) {
+		pr_err("Error reading rtc device (%s) : %d\n",
+			CONFIG_RTC_HCTOSYS_DEVICE, rc);
+		goto close_time;
+	}
+
+	rc = rtc_valid_tm(&tm);
+	if (rc) {
+		pr_err("Invalid RTC time (%s): %d\n",
+			CONFIG_RTC_HCTOSYS_DEVICE, rc);
+		goto close_time;
+	}
+	rtc_tm_to_time(&tm, now_tm_sec);
+
+close_time:
+	rtc_class_close(rtc);
+	return rc;
+}
+
+static int calculate_delta_time(unsigned long *time_stamp, int *delta_time_s)
+{
+	unsigned long now_tm_sec = 0;
+
+	/* default to delta time = 0 if anything fails */
+	*delta_time_s = 0;
+
+	if (get_current_time(&now_tm_sec)) {
+		pr_err("RTC read failed\n");
+		return 0;
+	}
+
+	*delta_time_s = (now_tm_sec - *time_stamp);
+
+	/* remember this time */
+	*time_stamp = now_tm_sec;
+	return 0;
+}
+static int bound_soc(int soc)
+{
+	soc = max(0, soc);
+	soc = min(100, soc);
+	return soc;
+}
+/*smooth_soc func
+ *parameter: soc_param struct. you need set the follwing members
+ *1. calculated_soc : the soc read from fuel gauge IC
+ *2. batt_volt: battery voltage, use it to monitor the shutdown voltage
+ *3. charging: battery charging status
+ *this func will do following calibrations:
+ *1. smooth the soc, if system don't enter suspend, soc only can be changed
+ *with 1% step. if system suspend is more than SOC_NOT_NEED_SMOOTH_SEC,report
+ *the calculated_soc directly.
+ *2. when battery voltage is lower than SHUT_DOWN_VOLT during SHUT_DOWN_VOLT_SEC
+ *report 0% directly.
+ *3. soc will keep a same value more than 1 minitues.
+ *4. soc don't increase if battery is not charging
+ * */
+static int smooth_soc(struct soc_param *soc_p)
+{
+	int soc=0;
+	int soc_change = 0;
+	int time_since_last_change_sec = 0;
+	unsigned long last_change_sec;
+
+	soc = soc_p->calculated_soc;
+
+	last_change_sec = soc_p->last_soc_change_sec;
+	calculate_delta_time(&last_change_sec, &time_since_last_change_sec);
+
+	if((time_since_last_change_sec < 60) && (soc_p->last_soc != 0))
+	{
+		if(abs(soc-soc_p->last_soc) > 1)
+		{
+			printk("%s:last soc is %d,current soc is %d,detla time is %d\n",__func__,soc_p->last_soc,soc,time_since_last_change_sec);
+			return soc_p->last_soc;
+		}
+	}
+	if (soc_p->last_soc != 0) {
+		/*
+		 * last_soc < soc  ... if we have not been charging at all
+		 * since the last time this was called, report previous SoC.
+		 */
+		if (soc_p->last_soc < soc && !soc_p->charging)
+			soc = soc_p->last_soc;
+		if(time_since_last_change_sec != 0)
+			soc_change = min((int)abs(soc_p->last_soc - soc),
+				time_since_last_change_sec / SOC_CHANGE_PER_SEC);
+		else
+			soc_change = abs(soc_p->last_soc - soc);
+		/*
+		 *normally soc will be updated periodically with a short time(20s), when system enter
+		 *suspend , this interval will be larger and soc will be recalibrated by OCV. so when
+		 *it is larger than SOC_NOT_NEED_SMOOTH_SEC.we don't do soc smooth, report it directly.
+		 * */
+		if(time_since_last_change_sec < SOC_NOT_NEED_SMOOTH_SEC)
+		{
+			soc_change = min(1, soc_change);
+		}
+
+		if (soc < soc_p->last_soc)
+			soc = soc_p->last_soc - soc_change;
+		if (soc > soc_p->last_soc)
+			soc = soc_p->last_soc + soc_change;
+	}
+	//report shutdown capacity when battery voltage is below 3450mV.
+	if(soc_p->batt_volt < SHUT_DOWN_VOLT)
+	{
+		if(soc_p->start_shut_down_mon == true)
+			soc_p->shut_down_volt_sec += time_since_last_change_sec;
+		soc_p->start_shut_down_mon = true;
+		if(soc_p->shut_down_volt_sec > SHUT_DOWN_VOLT_SEC)
+		{
+			printk("battery voltage is too low during %d sec,report 0\n",soc_p->shut_down_volt_sec);
+			soc_change = 100;
+			soc = 0;
+		}
+	}else{
+		soc_p->start_shut_down_mon = false;
+		soc_p->shut_down_volt_sec = 0;
+	}
+	if(soc_change != 0)
+	{
+		printk("battery capacity change %d ,update\n",soc_change);
+	//	if (chip->bms_psy_registered)
+	//		power_supply_changed(&chip->bms_psy);
+	}
+	soc_p->last_soc_change_sec = last_change_sec;
+
+	pr_debug("last_soc = %d, calculated_soc = %d, soc = %d, time since last change = %d\n",
+			soc_p->last_soc, soc_p->calculated_soc,
+			soc, time_since_last_change_sec);
+	soc_p->last_soc = bound_soc(soc);
+	if(soc_p->last_soc == 100)
+		full_capacity = true;
+	else
+		full_capacity = false;
+	return soc_p->last_soc;
+}
+/*lenovo-sw weiweij added end*/
 
 #define DEFAULT_CAPACITY	50
 static int get_prop_capacity(struct qpnp_lbc_chip *chip)
 {
 	union power_supply_propval ret = {0,};
-	int soc;
+	int soc, battery_status;
 
 	if (chip->fake_battery_soc >= 0)
 		return chip->fake_battery_soc;
 
+/*lenovo-sw weiweij modified for max17058 function*/
+#ifdef CONFIG_MAX17058_FG
+	//empty
+	pr_debug("%s; battery pressnet=%d, fake=%d\n", __func__, get_prop_batt_present(chip), chip->cfg_use_fake_battery);
+#else
 	if (chip->cfg_use_fake_battery || !get_prop_batt_present(chip))
 		return DEFAULT_CAPACITY;
+#endif
+/*lenovo-sw weiweij modified for max17058 function end*/
 
+/*lenovo-sw weiweij modified for max17058 function*/
+#ifdef CONFIG_MAX17058_FG
+	{
+		struct power_supply* fg_psy = power_supply_get_by_name("max17058_fgauge");
+
+		if(fg_psy)
+		{
+			fg_psy->get_property(fg_psy, POWER_SUPPLY_PROP_CAPACITY, &ret);
+			pr_debug("17058 soc = %d\n", ret.intval);
+
+			return ret.intval;
+		}else
+		{
+			pr_err("%s get 17058 psy fail. Usd default pmic soc\n", __func__);
+#endif
 	if (chip->bms_psy) {
 		chip->bms_psy->get_property(chip->bms_psy,
 				POWER_SUPPLY_PROP_CAPACITY, &ret);
 		soc = ret.intval;
+/*lenovo-sw weiweij added*/
+		if(chip->warm_chg_done && chip->bat_is_warm)
+			soc = 100;
+/*lenovo-sw weiweij added end*/
+
 		if (soc == 0) {
 			if (!qpnp_lbc_is_usb_chg_plugged_in(chip))
 				pr_warn_ratelimited("Batt 0, CHG absent\n");
 		}
-		return soc;
+/*lenovo-sw weiweij added*/
+		chip->soc_param.charging = battery_status == POWER_SUPPLY_STATUS_CHARGING;
+		chip->soc_param.calculated_soc = soc;
+		chip->soc_param.batt_volt = get_prop_battery_voltage_now(chip);
+		return smooth_soc(&chip->soc_param);
+/*lenovo-sw weiweij added end*/
 	} else {
 		pr_debug("No BMS supply registered return %d\n",
 							DEFAULT_CAPACITY);
 	}
+/*lenovo-sw weiweij modified for max17058 function*/
+#ifdef CONFIG_MAX17058_FG
+			}
+		}
+#endif
+/*lenovo-sw weiweij modified for max17058 function end*/
 
 	/*
 	 * Return default capacity to avoid userspace
@@ -1391,7 +1822,7 @@ static void qpnp_lbc_set_appropriate_current(struct qpnp_lbc_chip *chip)
 		chg_current = min(chg_current,
 			chip->thermal_mitigation[chip->therm_lvl_sel]);
 
-	pr_debug("setting charger current %d mA\n", chg_current);
+	printk("setting charger current %d mA\n", chg_current);
 	qpnp_lbc_ibatmax_set(chip, chg_current);
 }
 
@@ -1666,6 +2097,10 @@ static int qpnp_batt_power_set_property(struct power_supply *psy,
 		pr_debug("power supply changed batt_psy\n");
 		break;
 	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
+#ifdef CONFIG_BQ24296_CHARGER
+		chip->testmode_flag = !(val->intval);
+		chip->charger_disabled = 0;
+#endif
 		chip->cfg_charging_disabled = !(val->intval);
 		rc = qpnp_lbc_charger_enable(chip, USER,
 						!chip->cfg_charging_disabled);
@@ -1696,6 +2131,8 @@ static int qpnp_batt_power_get_property(struct power_supply *psy,
 	switch (psp) {
 	case POWER_SUPPLY_PROP_STATUS:
 		val->intval = get_prop_batt_status(chip);
+		if(100 == get_prop_capacity(chip) && val->intval == POWER_SUPPLY_STATUS_CHARGING)
+			val->intval = POWER_SUPPLY_STATUS_FULL;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 		val->intval = get_prop_charge_type(chip);
@@ -1726,9 +2163,20 @@ static int qpnp_batt_power_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		val->intval = get_prop_capacity(chip);
+#ifdef CONFIG_PMIC_CHARGING_LED
+		charging_led_ctrl_soc = val->intval;
+
+		if(val->intval==100)
+			lenovo_pmic_charging_led_en(chip, 0);
+		else
+			lenovo_pmic_charging_led_en(chip, 1);			
+#endif		
 		break;
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		val->intval = get_prop_current_now(chip);
+		break;
+	case POWER_SUPPLY_PROP_TECHNOLOGY:
+		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
 		break;
 	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
 		val->intval = !(chip->cfg_charging_disabled);
@@ -2116,6 +2564,9 @@ static int qpnp_lbc_usb_path_init(struct qpnp_lbc_chip *chip)
 		 * Enable charging explictly,
 		 * because not sure the default behavior.
 		 */
+/*lenovo-sw weiweij added for airplay modify*/		 
+		chip->charger_disabled = 0;
+/*lenovo-sw weiweij added for airplay modify end*/			
 		reg_val = CHG_ENABLE;
 		rc = qpnp_lbc_masked_write(chip, chip->chgr_base + CHG_CTRL_REG,
 					CHG_EN_MASK, reg_val);
@@ -2413,6 +2864,7 @@ static int qpnp_charger_read_dt_props(struct qpnp_lbc_chip *chip)
 	chip->cfg_float_charge =
 			of_property_read_bool(chip->spmi->dev.of_node,
 					"qcom,float-charge");
+	printk("float charge is %d\n",chip->cfg_float_charge);
 
 	/* Get the charger EOC detect property */
 	chip->cfg_charger_detect_eoc =
@@ -2520,6 +2972,9 @@ static int qpnp_charger_read_dt_props(struct qpnp_lbc_chip *chip)
 }
 
 #define CHG_REMOVAL_DETECT_DLY_MS	300
+/*lenovo-sw weiweij added for airplay changes*/
+#define CHG_GONE_TIME_OUT_MS 3000
+/*lenovo-sw weiweij added for airplay changes end*/
 static irqreturn_t qpnp_lbc_chg_gone_irq_handler(int irq, void *_chip)
 {
 	struct qpnp_lbc_chip *chip = _chip;
@@ -2559,11 +3014,15 @@ static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
 	unsigned long flags;
 
 	usb_present = qpnp_lbc_is_usb_chg_plugged_in(chip);
-	pr_debug("usbin-valid triggered: %d\n", usb_present);
+	pr_info("usbin-valid triggered: %d\n", usb_present);
 
 	if (chip->usb_present ^ usb_present) {
 		chip->usb_present = usb_present;
 		if (!usb_present) {
+/*lenovo-sw weiweij added for airplay changes*/
+	        wake_unlock(&chip->temp_mon_wake_lock);
+            wake_lock_timeout(&chip->temp_mon_wake_lock,msecs_to_jiffies(CHG_GONE_TIME_OUT_MS));
+/*lenovo-sw weiweij added for airplay changes end*/
 			qpnp_lbc_charger_enable(chip, CURRENT, 0);
 			spin_lock_irqsave(&chip->ibat_change_lock, flags);
 			chip->usb_psy_ma = QPNP_CHG_I_MAX_MIN_90;
@@ -2582,7 +3041,13 @@ static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
 			 */
 			if (!chip->cfg_disable_vbatdet_based_recharge)
 				qpnp_lbc_vbatdet_override(chip, OVERRIDE_0);
-
+/*lenovo-sw weiweij added for airplay changes*/
+			wake_lock(&chip->temp_mon_wake_lock);
+			cancel_delayed_work(&chip->temp_mon_work);
+			schedule_delayed_work(&chip->temp_mon_work,0);
+			qpnp_lbc_charger_enable(chip, CURRENT, 1);
+/*lenovo-sw weiweij added for airplay changes end*/
+			
 			/*
 			 * If collapsible charger supported, enable chgr_gone
 			 * irq, and configure for collapsible charger.
@@ -2600,6 +3065,12 @@ static irqreturn_t qpnp_lbc_usbin_valid_irq_handler(int irq, void *_chip)
 			 */
 			qpnp_lbc_charger_enable(chip, SOC, 1);
 		}
+#ifdef CONFIG_PMIC_CHARGING_LED
+		if(charging_led_ctrl_soc!=100)
+			lenovo_pmic_charging_led_en(chip, usb_present);
+		else
+			lenovo_pmic_charging_led_en(chip, 0);
+#endif
 
 		pr_debug("Updating usb_psy PRESENT property\n");
 		power_supply_set_present(chip->usb_psy, chip->usb_present);
@@ -2629,8 +3100,12 @@ static irqreturn_t qpnp_lbc_batt_temp_irq_handler(int irq, void *_chip)
 	struct qpnp_lbc_chip *chip = _chip;
 	int batt_temp_good;
 
+/*lenovo-sw weiweij added for airplay changes*/
+	cancel_delayed_work(&chip->temp_mon_work);
+    schedule_delayed_work(&chip->temp_mon_work,0);
+/*lenovo-sw weiweij added for airplay changes end*/
 	batt_temp_good = qpnp_lbc_is_batt_temp_ok(chip);
-	pr_debug("batt-temp triggered: %d\n", batt_temp_good);
+	pr_info("batt-temp triggered: %d\n", batt_temp_good);
 
 	pr_debug("power supply changed batt_psy\n");
 	power_supply_changed(&chip->batt_psy);
@@ -2811,6 +3286,152 @@ static irqreturn_t qpnp_lbc_usb_overtemp_irq_handler(int irq, void *_chip)
 	return IRQ_HANDLED;
 }
 
+/*lenovo-sw weiweij added for airplay changes*/
+#define TEMP_HOT 500
+#define TEMP_COLD 0
+static bool dec_cur_bat_cool = false;
+static bool use_hw_stop_chg = true;
+static int warm_chg_done_count = 0;
+static void
+qpnp_temp_mon_work(struct work_struct *work)
+{
+       struct delayed_work *dwork = to_delayed_work(work);
+       struct qpnp_lbc_chip *chip = container_of(dwork,
+                               struct qpnp_lbc_chip, temp_mon_work);
+       int temp = 0;
+       int delay_ms = 0;
+       int current_now = 0;
+       int batt_voltage = 0;
+       bool bat_warm,bat_cool;
+	   int rc = 0;
+
+       current_now = get_prop_current_now(chip);
+       temp = get_prop_batt_temp(chip);
+
+       if(get_prop_batt_health(chip) != POWER_SUPPLY_HEALTH_GOOD)
+       {
+       //when the pmic stop the charging automatically we close this feature and start software check.
+               if(use_hw_stop_chg == true)
+               {
+					   rc = qpnp_lbc_masked_write(chip,
+							chip->bat_if_base + BAT_IF_BTC_CTRL,
+							0x3, 2);
+                       if (rc) {
+                               pr_err("failed to chose BTC rc=%d\n", rc);
+                       }
+                       use_hw_stop_chg = false;
+               }
+       }
+       if(temp < 420 && temp > 50)
+       {
+       //when temp below the hot temperatuer, start hw feature to stop charging
+               if(use_hw_stop_chg == false)
+               {
+					   rc = qpnp_lbc_masked_write(chip,
+							chip->bat_if_base + BAT_IF_BTC_CTRL,
+							0x3, 1);
+                       if (rc) {
+                               pr_err("failed to chose BTC rc=%d\n", rc);
+                       }
+                       use_hw_stop_chg = true;
+               }
+       }
+       if(temp > (TEMP_HOT) || temp < (TEMP_COLD - 5))
+       {
+               //disable charging
+               if(temp_abnormal == false)
+               {
+                       printk("Battery temperature is abnormal,stop charging\n");
+                       temp_abnormal = true;
+                       qpnp_lbc_charger_enable(chip, USER,0);
+               }
+       }else if((TEMP_COLD + 5) < temp && temp < (TEMP_HOT - 5))
+       {
+               if(temp_abnormal == true)
+               {
+                       printk("Battery temperature is normal again,start charging\n");
+                       temp_abnormal = false;
+                       //enable charging
+                       qpnp_lbc_charger_enable(chip, USER,1);
+               }
+       }
+
+       batt_voltage = get_prop_battery_voltage_now(chip)/1000;
+
+       printk("battery temp is %d,battery voltage is %d,current now is %d\n",(int)temp,(int)batt_voltage,current_now);
+
+       if(temp  < chip->cfg_cool_bat_decidegc){
+               bat_cool = true;
+               bat_warm = false;
+               if(batt_voltage > 4150)
+               {
+                       dec_cur_bat_cool = true;
+                       chip->cfg_cool_bat_chg_ma = 300;
+               }else
+               {
+                       dec_cur_bat_cool = false;
+                       chip->cfg_cool_bat_chg_ma = 500;
+               }
+       }else if(temp > chip->cfg_cool_bat_decidegc && temp < chip->cfg_warm_bat_decidegc){
+               bat_cool = false;
+               bat_warm = false;
+       }else if(temp > chip->cfg_warm_bat_decidegc){
+               bat_warm = true;
+               bat_cool = false;
+       }
+
+       if (chip->bat_is_cool ^ bat_cool || chip->bat_is_warm ^ bat_warm || chip->dec_cur_bat_cool ^ dec_cur_bat_cool) {
+               chip->bat_is_cool = bat_cool;
+               chip->bat_is_warm = bat_warm;
+               chip->dec_cur_bat_cool = dec_cur_bat_cool;      
+
+
+           /**
+            * set appropriate voltages and currents.
+            *
+            * Note that when the battery is hot or cold, the charger
+            * driver will not resume with SoC. Only vbatdet is used to
+            * determine resume of charging.
+            */
+
+           printk("set current temp changed.\n");
+               qpnp_lbc_set_appropriate_vddmax(chip);
+               qpnp_lbc_set_appropriate_current(chip);
+       }
+	   if(chip->bat_is_warm)
+	   {
+		   if(!chip->warm_chg_done)
+		   {
+			   if(batt_voltage > chip->cfg_warm_bat_mv)
+			   {
+				   warm_chg_done_count++;
+			   }else
+				   warm_chg_done_count = 0;
+			   if(warm_chg_done_count > 3)
+			   {
+				   chip->warm_chg_done = true;
+				   printk("battery is warm,set warm_chg_done %d\n",warm_chg_done_count);
+			   }
+		   }
+	   }else
+	   {
+		   chip->warm_chg_done = false;
+	   }
+
+       if(chip->cfg_cool_bat_decidegc < temp && temp < chip->cfg_warm_bat_decidegc)
+               delay_ms = 60*3*1000;
+       else
+               delay_ms = 30*1000;
+       /*
+        *this work will not exit only in following mode:
+        1. charger is work
+        2. battery temp is out of 10-45 degree
+        * */
+       if(wake_lock_active(&chip->temp_mon_wake_lock) || temp_abnormal == true || chip->bat_is_cool || chip->bat_is_warm)
+               schedule_delayed_work(&chip->temp_mon_work,msecs_to_jiffies(delay_ms));
+}
+/*lenovo-sw weiweij added for airplay changes end*/
+
 static int qpnp_disable_lbc_charger(struct qpnp_lbc_chip *chip)
 {
 	int rc;
@@ -2961,6 +3582,11 @@ static void determine_initial_status(struct qpnp_lbc_chip *chip)
 			qpnp_chg_collapsible_chgr_config(chip, 1);
 		}
 		power_supply_set_online(chip->usb_psy, 1);
+/*lenovo-sw weiweij added for airplay changes*/
+	   wake_lock(&chip->temp_mon_wake_lock);
+	   cancel_delayed_work(&chip->temp_mon_work);
+	   schedule_delayed_work(&chip->temp_mon_work,0);
+/*lenovo-sw weiweij added for airplay changes end*/
 	}
 }
 
@@ -3042,6 +3668,83 @@ static enum alarmtimer_restart vddtrim_callback(struct alarm *alarm,
 
 	return ALARMTIMER_NORESTART;
 }
+
+#ifdef CONFIG_QPNP_CHARGER_FILE_OPS
+#ifdef CONFIG_LED_OPS
+
+static ssize_t set_charging_led_enable(struct device *dev,
+					   struct device_attribute *attr,
+					   const char *buf,
+					   size_t count)
+{
+#ifdef CONFIG_PMIC_CHARGING_LED	
+//	struct spmi_device *spmi = (struct spmi_device*) dev;
+//	struct qpnp_lbc_chip *chip  = (struct qpnp_lbc_chip*) (spmi->dev.p->driver_data);
+#endif
+	long val;
+
+	if (kstrtol(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	pr_err("%s val = %d\n", __func__, (int)val);			
+
+	if (val == 1)
+	{
+		charging_led_ctrl_flag = 1;
+	}else 
+	{
+		charging_led_ctrl_flag = 0;
+	}
+
+#ifdef CONFIG_PMIC_CHARGING_LED
+	if(charging_led_ctrl_soc!=100)
+		lenovo_pmic_charging_led_en(tmp_chip, charging_led_ctrl_flag);
+	else
+		lenovo_pmic_charging_led_en(tmp_chip, 0);
+#endif		
+
+	return count;	
+}
+
+static ssize_t get_charging_led_enable(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
+{
+	//struct bq24296_device *bq = (struct bq24296_device*) dev;
+
+	return sprintf(buf, "%d\n", charging_led_ctrl_flag);	
+}
+
+static DEVICE_ATTR(led_status, 664, get_charging_led_enable, set_charging_led_enable);
+#endif
+
+static struct attribute *lenovo_qpnp_charger_sysfs_attributes[] = {
+	/*
+	 * TODO: some (appropriate) of these attrs should be switched to
+	 * use power supply class props.
+	 */
+#ifdef CONFIG_LED_OPS
+	&dev_attr_led_status.attr,
+#endif
+	NULL,
+};
+
+static const struct attribute_group lenovo_qpnp_charger_sysfs_attr_group = {
+	.attrs = lenovo_qpnp_charger_sysfs_attributes,
+};
+
+static int lenovo_qpnp_charger_sysfs_init(struct qpnp_lbc_chip *chip)
+{
+	return sysfs_create_group(&chip->batt_psy.dev->kobj,
+			&lenovo_qpnp_charger_sysfs_attr_group);
+}
+
+static void lenovo_qpnp_charger_sysfs_exit(struct qpnp_lbc_chip *chip)
+{
+	sysfs_remove_group(&chip->batt_psy.dev->kobj, &lenovo_qpnp_charger_sysfs_attr_group);
+}
+
+#endif
 
 static int qpnp_lbc_parallel_charger_init(struct qpnp_lbc_chip *chip)
 {
@@ -3271,6 +3974,11 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 		return -ENOMEM;
 	}
 
+/*lenovo-sw weiweij added for airplay modify*/ 
+    tmp_chip = chip;
+    chip->charger_disabled = 1;     
+    chip->warm_chg_done = false;
+/*lenovo-sw weiweij added for airplay modify end*/             
 	chip->usb_psy = usb_psy;
 	chip->dev = &spmi->dev;
 	chip->spmi = spmi;
@@ -3287,6 +3995,14 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 	alarm_init(&chip->vddtrim_alarm, ALARM_REALTIME, vddtrim_callback);
 	INIT_DELAYED_WORK(&chip->collapsible_detection_work,
 			qpnp_lbc_collapsible_detection_work);
+
+/*lenovo-sw weiweij added*/
+       memset(&chip->soc_param,0,sizeof(struct soc_param));
+       chip->warm_chg_done = false;
+/*lenovo-sw weiweij added end*/
+#ifdef CONFIG_BQ24296_CHARGER
+       chip->testmode_flag = 0;
+#endif
 
 	/* Get all device-tree properties */
 	rc = qpnp_charger_read_dt_props(chip);
@@ -3376,6 +4092,14 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 		}
 	}
 
+#ifdef CONFIG_QPNP_CHARGER_FILE_OPS
+	rc = lenovo_qpnp_charger_sysfs_init(chip);
+	if (rc<0) {
+		pr_err("failed to create sysfs entries: %d\n", rc);
+		goto fail_chg_enable;
+	}
+#endif
+
 	if ((chip->cfg_cool_bat_decidegc || chip->cfg_warm_bat_decidegc)
 			&& chip->bat_if_base) {
 		chip->adc_param.low_temp = chip->cfg_cool_bat_decidegc;
@@ -3403,6 +4127,12 @@ static int qpnp_lbc_main_probe(struct spmi_device *spmi)
 		goto unregister_batt;
 	}
 
+/*lenovo-sw weiweij added for airplay changes*/
+    wake_lock_init(&chip->temp_mon_wake_lock,
+            WAKE_LOCK_SUSPEND, "qpnp-chg-temp-wake-lock");
+    INIT_DELAYED_WORK(&chip->temp_mon_work, qpnp_temp_mon_work);
+/*lenovo-sw weiweij added for airplay changes end*/
+	
 	/* Get/Set charger's initial status */
 	determine_initial_status(chip);
 
@@ -3473,6 +4203,10 @@ static int qpnp_lbc_remove(struct spmi_device *spmi)
 {
 	struct qpnp_lbc_chip *chip = dev_get_drvdata(&spmi->dev);
 
+#ifdef CONFIG_QPNP_CHARGER_FILE_OPS
+	lenovo_qpnp_charger_sysfs_exit(chip);
+#endif
+
 	if (chip->supported_feature_flag & VDD_TRIM_SUPPORTED) {
 		alarm_cancel(&chip->vddtrim_alarm);
 		cancel_work_sync(&chip->vddtrim_work);
@@ -3488,6 +4222,49 @@ static int qpnp_lbc_remove(struct spmi_device *spmi)
 	return 0;
 }
 
+/*
+ * S/W workaround to force VREF_BATT_THERM ON:
+ * Switching between aVDD and LDO has h/w issues, forcing VREF_BATT_THM
+ * alway ON to prevent switching to aVDD.
+ */
+
+static int qpnp_lbc_resume(struct device *dev)
+{
+	struct qpnp_lbc_chip *chip = dev_get_drvdata(dev);
+	int rc = 0;
+
+	if (chip->bat_if_base) {
+		rc = qpnp_lbc_masked_write(chip,
+			chip->bat_if_base + BAT_IF_VREF_BAT_THM_CTRL_REG,
+			VREF_BATT_THERM_FORCE_ON, VREF_BATT_THERM_FORCE_ON);
+		if (rc)
+			pr_err("Failed to force on VREF_BAT_THM rc=%d\n", rc);
+	}
+
+	return rc;
+}
+
+static int qpnp_lbc_suspend(struct device *dev)
+{
+	struct qpnp_lbc_chip *chip = dev_get_drvdata(dev);
+	int rc = 0;
+
+	if (chip->bat_if_base) {
+		rc = qpnp_lbc_masked_write(chip,
+			chip->bat_if_base + BAT_IF_VREF_BAT_THM_CTRL_REG,
+			VREF_BATT_THERM_FORCE_ON, VREF_BAT_THM_ENABLED_FSM);
+		if (rc)
+			pr_err("Failed to set FSM VREF_BAT_THM rc=%d\n", rc);
+	}
+
+	return rc;
+}
+
+static const struct dev_pm_ops qpnp_lbc_pm_ops = {
+	.resume		= qpnp_lbc_resume,
+	.suspend	= qpnp_lbc_suspend,
+};
+
 static struct of_device_id qpnp_lbc_match_table[] = {
 	{ .compatible = QPNP_CHARGER_DEV_NAME, },
 	{}
@@ -3500,6 +4277,7 @@ static struct spmi_driver qpnp_lbc_driver = {
 		.name		= QPNP_CHARGER_DEV_NAME,
 		.owner		= THIS_MODULE,
 		.of_match_table	= qpnp_lbc_match_table,
+		.pm		= &qpnp_lbc_pm_ops,
 	},
 };
 
