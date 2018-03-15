@@ -45,6 +45,12 @@
 #define of_board_is_xpm()	of_machine_is_compatible("qcom,xpm")
 #define of_board_is_skuf()	of_machine_is_compatible("qcom,skuf")
 #define of_board_is_sbc()	of_machine_is_compatible("qcom,sbc")
+//lenovo add by jixu@lenovo.com begin
+#define of_board_is_z2()	of_machine_is_compatible("lenovo,z2")
+#define of_board_is_sisley()	of_machine_is_compatible("lenovo,sisley")
+#define of_board_is_sagitar()	of_machine_is_compatible("lenovo,sagitar")
+#define of_board_is_sisleyl()	of_machine_is_compatible("lenovo,sisleyl")
+//lenovo add by jixu@lenovo.com end
 
 #define machine_is_msm8974()	of_machine_is_compatible("qcom,msm8974")
 #define machine_is_msm9625()	of_machine_is_compatible("qcom,msm9625")
