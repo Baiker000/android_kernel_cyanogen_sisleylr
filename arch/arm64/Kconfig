@@ -269,6 +269,12 @@ config ARCH_XGENE
 	help
 	  This enables support for AppliedMicro X-Gene SOC Family
 
+config PRODUCT_SISLEYL
+    bool "for sisleyl ALL product:sisleylt sisleyle sisleylr sisleylw"
+    default n
+    help
+      define SISLEYL product
+
 endmenu
 
 menu "Bus support"
