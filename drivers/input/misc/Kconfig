@@ -818,6 +818,12 @@ config SENSORS_CAPELLA_CM36283
 	  To compile this driver as a module, choose M here: the
 	  module will be called CM36283.
 
+config SENSORS_EPL8801
+    bool "enable EPL8801"
+    depends on I2C
+    help
+      Say Y here to enable the EPL8801
+
 config SENSORS_BMA2X2
 	tristate "BMA2x2 acceleration sensor support"
 	depends on I2C

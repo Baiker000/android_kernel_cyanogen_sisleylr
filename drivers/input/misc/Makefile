@@ -80,6 +80,10 @@ obj-$(CONFIG_SENSORS_BMA2X2)	+= bstclass.o
 obj-$(CONFIG_SENSORS_BMA2X2)	+= bma2x2.o
 obj-$(CONFIG_SENSORS_LTR553)	+= ltr553.o
 
+obj-$(CONFIG_SENSORS_EPL8801)	+= epl8801.o
+obj-$(CONFIG_SENSORS_BMA2X2)	+= bma2x2_driver.o
+obj-$(CONFIG_SENSORS_BMA2X2)	+= bst_sensor_common.o
+
 ifeq ($(CONFIG_SENSORS_BMA2X2_ENABLE_INT1),y)
 	EXTRA_CFLAGS += -DBMA2X2_ENABLE_INT1
 endif
