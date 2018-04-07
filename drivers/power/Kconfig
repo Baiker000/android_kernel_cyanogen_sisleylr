@@ -553,6 +553,37 @@ config MSM_BCL_PERIPHERAL_CTL
 	  provides routines to configure and monitor the BCL
 	  PMIC peripheral.
 
+config MAX17058_FG
+    tristate "_MAX17058 FG driver"
+    depends on I2C
+    help
+      Say Y here to enable the max 17058 driver.
+
+config PMIC_CHARGING_LED
+    tristate "pmic led control"
+    help
+      Say Y here to enable pmic led control.
+
+config UNSTANDARD_CHARGER_LIMIT
+    tristate "unstandard charger charging current limitation"
+    help
+      Say Y here to enable pmic led control.
+
+config MULTI_BATTERY
+    tristate "second battery supplier support"
+    help
+      Say Y here for second battery supplier support.
+
+config QPNP_CHARGER_FILE_OPS
+    tristate "qpnp charger file ops"
+    help
+      Say Y here for qpnp charger file ops support.
+
+config LED_OPS
+    tristate "led file ops"
+    help
+      Say Y here to led file ops support.
+
 source "drivers/power/reset/Kconfig"
 
 endif # POWER_SUPPLY
