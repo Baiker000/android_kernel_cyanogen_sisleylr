@@ -117,7 +117,7 @@
 	pinctrl-1 = <&mdss_dsi_suspend &mdss_te_suspend>;
 	qcom,dsi-pref-prim-pan = <&dsi_jdi_fhd_video>;
 
-	qcom,platform-enable-gpio = <>;
+	qcom,platform-enable-gpio = <&msm_gpio 97 0>;
 	qcom,platform-reset-gpio = <&msm_gpio 25 0>;
 	qcom,platform-bklight-en-gpio = <&msm_gpio 98 0>;
 
