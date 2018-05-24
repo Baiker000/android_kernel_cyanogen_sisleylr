@@ -1034,31 +1034,31 @@ static void goodix_gesture_work_func(struct work_struct *work)
 		{   /*
 			case 'c':
 			letter = 0x20;
-			input_report_key(ts->input_dev, KEY_SLIDE, 1);
+			input_report_key(ts->input_dev, KEY_POWER, 1);
 			input_sync(ts->input_dev);
-			input_report_key(ts->input_dev, KEY_SLIDE, 0);
+			input_report_key(ts->input_dev, KEY_POWER, 0);
 			input_sync(ts->input_dev);
 			break;
 			case 'e':
 				letter = 0x20;
-			input_report_key(ts->input_dev, KEY_SLIDE, 1);
+			input_report_key(ts->input_dev, KEY_POWER, 1);
 			input_sync(ts->input_dev);
-			input_report_key(ts->input_dev, KEY_SLIDE, 0);
+			input_report_key(ts->input_dev, KEY_POWER, 0);
 			input_sync(ts->input_dev);
 			break;
             */
 			case 'v':
 				letter = 0x34;
-			input_report_key(ts->input_dev, KEY_SLIDE, 1);
+			input_report_key(ts->input_dev, KEY_POWER, 1);
 			input_sync(ts->input_dev);
-			input_report_key(ts->input_dev, KEY_SLIDE, 0);
+			input_report_key(ts->input_dev, KEY_POWER, 0);
 			input_sync(ts->input_dev);
 			break;
 			case 'o':
 				letter = 0x33;
-			input_report_key(ts->input_dev, KEY_SLIDE, 1);
+			input_report_key(ts->input_dev, KEY_POWER, 1);
 			input_sync(ts->input_dev);
-			input_report_key(ts->input_dev, KEY_SLIDE, 0);
+			input_report_key(ts->input_dev, KEY_POWER, 0);
 			input_sync(ts->input_dev);
 			break;
 			/*
@@ -1086,15 +1086,15 @@ static void goodix_gesture_work_func(struct work_struct *work)
                 doze_status = DOZE_WAKEUP;
 		letter = 0x20;
 		if(type == 0){
-               	 input_report_key(ts->input_dev, KEY_SLIDE, 1);//KEY_GESTURE_LR
+               	 input_report_key(ts->input_dev, KEY_POWER, 1);//KEY_GESTURE_LR
                 	input_sync(ts->input_dev);
-                	input_report_key(ts->input_dev, KEY_SLIDE, 0);
+                	input_report_key(ts->input_dev, KEY_POWER, 0);
                 	input_sync(ts->input_dev);
 		}
 		else if(type == 3){
-                	input_report_key(ts->input_dev, KEY_SLIDE, 1);//KEY_GESTURE_LR
+                	input_report_key(ts->input_dev, KEY_POWER, 1);//KEY_GESTURE_LR
                 	input_sync(ts->input_dev);
-                	input_report_key(ts->input_dev, KEY_SLIDE, 0);
+                	input_report_key(ts->input_dev, KEY_POWER, 0);
                 	input_sync(ts->input_dev);
 		}
                 // clear 0x814B
@@ -1109,9 +1109,9 @@ static void goodix_gesture_work_func(struct work_struct *work)
 	/* remove this function -----lenovo-sw2 lixh10
 			letter =0x50;
                 		GTP_INFO("Gesture---->Double click home key snap shot !");
-			input_report_key(ts->input_dev, KEY_SLIDE, 1);
+			input_report_key(ts->input_dev, KEY_POWER, 1);
 			input_sync(ts->input_dev);
-			input_report_key(ts->input_dev, KEY_SLIDE, 0);
+			input_report_key(ts->input_dev, KEY_POWER, 0);
 			input_sync(ts->input_dev);
 	*/
 		}
@@ -1122,9 +1122,9 @@ static void goodix_gesture_work_func(struct work_struct *work)
 			//double click on view area}
 			letter = 0x24;
                 		GTP_INFO("Gesture---->Double click screen to light up the screen type : %d!",tap_type[2]);
-               		 input_report_key(ts->input_dev, KEY_SLIDE, 1);//KEY_SLIDE
+               		 input_report_key(ts->input_dev, KEY_POWER, 1);//KEY_SLIDE
                 		input_sync(ts->input_dev);
-                		input_report_key(ts->input_dev, KEY_SLIDE, 0);
+                		input_report_key(ts->input_dev, KEY_POWER, 0);
                		input_sync(ts->input_dev);
 		}
  // clear 0x814B
@@ -1520,7 +1520,7 @@ static s8 gtp_wakeup_sleep(struct goodix_ts_data * ts)
     while(retry++ < 5)
     {
 #if GTP_GESTURE_WAKEUP
-	if(gtp_wakeup_flag && (doze_status==DOZE_ENABLED)){
+	if(gtp_wakeup_flag){
         	if (DOZE_WAKEUP != doze_status)
            		 GTP_INFO("%s,Powerkey wakeup.",__func__);
 		else
@@ -2253,8 +2253,8 @@ static s8 gtp_request_input_dev(struct goodix_ts_data *ts)
 #endif
 
 #if GTP_GESTURE_WAKEUP
-	set_bit(KEY_SLIDE, ts->input_dev->keybit);
-	input_set_capability(ts->input_dev, EV_KEY, KEY_SLIDE);
+	set_bit(KEY_POWER, ts->input_dev->keybit);
+	input_set_capability(ts->input_dev, EV_KEY, KEY_POWER);
 #if 0
 	input_set_capability(ts->input_dev, EV_KEY, KEY_GESTURE_V);
 	input_set_capability(ts->input_dev, EV_KEY, KEY_GESTURE_E);
