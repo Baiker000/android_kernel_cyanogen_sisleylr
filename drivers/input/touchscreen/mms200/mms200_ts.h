@@ -21,7 +21,7 @@
 #include <linux/cdev.h>
 #include <linux/fs.h>
 //#include <linux/platform_data/mms_ts.h>
-#include <mms_ts.h>
+#include "mms_ts.h"
 #include <linux/completion.h>
 #include <linux/init.h>
 #include <asm/uaccess.h>

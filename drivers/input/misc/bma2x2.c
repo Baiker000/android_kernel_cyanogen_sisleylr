@@ -1529,7 +1529,7 @@ struct bma2x2_data {
 	bool accel_delay_change;
 	wait_queue_head_t accel_wq;
 	struct regulator *vdd;
-	struct regulator *vio;
+	struct regulator *vcc_i2c;
 	bool power_enabled;
 	unsigned char bandwidth;
 	unsigned char range;
@@ -7322,10 +7322,10 @@ static int bma2x2_power_ctl(struct bma2x2_data *data, bool on)
 			return ret;
 		}
 
-		ret = regulator_disable(data->vio);
+		ret = regulator_disable(data->vcc_i2c);
 		if (ret) {
 			dev_err(&data->bma2x2_client->dev,
-				"Regulator vio disable failed ret=%d\n", ret);
+				"Regulator vcc_i2c disable failed ret=%d\n", ret);
 			err = regulator_enable(data->vdd);
 			return ret;
 		}
@@ -7338,10 +7338,10 @@ static int bma2x2_power_ctl(struct bma2x2_data *data, bool on)
 			return ret;
 		}
 
-		ret = regulator_enable(data->vio);
+		ret = regulator_enable(data->vcc_i2c);
 		if (ret) {
 			dev_err(&data->bma2x2_client->dev,
-				"Regulator vio enable failed ret=%d\n", ret);
+				"Regulator vcc_i2c enable failed ret=%d\n", ret);
 			err = regulator_disable(data->vdd);
 			return ret;
 		}
@@ -7379,29 +7379,29 @@ static int bma2x2_power_init(struct bma2x2_data *data)
 		}
 	}
 
-	data->vio = regulator_get(&data->bma2x2_client->dev, "vio");
-	if (IS_ERR(data->vio)) {
-		ret = PTR_ERR(data->vio);
+	data->vcc_i2c = regulator_get(&data->bma2x2_client->dev, "vcc_i2c");
+	if (IS_ERR(data->vcc_i2c)) {
+		ret = PTR_ERR(data->vcc_i2c);
 		dev_err(&data->bma2x2_client->dev,
-			"Regulator get failed vio ret=%d\n", ret);
+			"Regulator get failed vcc_i2c ret=%d\n", ret);
 		goto reg_vdd_set;
 	}
 
-	if (regulator_count_voltages(data->vio) > 0) {
-		ret = regulator_set_voltage(data->vio,
+	if (regulator_count_voltages(data->vcc_i2c) > 0) {
+		ret = regulator_set_voltage(data->vcc_i2c,
 				BMA2x2_VIO_MIN_UV,
 				BMA2x2_VIO_MAX_UV);
 		if (ret) {
 			dev_err(&data->bma2x2_client->dev,
-			"Regulator set failed vio ret=%d\n", ret);
-			goto reg_vio_put;
+			"Regulator set failed vcc_i2c ret=%d\n", ret);
+			goto reg_vcc_i2c_put;
 		}
 	}
 
 	return 0;
 
-reg_vio_put:
-	regulator_put(data->vio);
+reg_vcc_i2c_put:
+	regulator_put(data->vcc_i2c);
 reg_vdd_set:
 	if (regulator_count_voltages(data->vdd) > 0)
 		regulator_set_voltage(data->vdd, 0, BMA2x2_VDD_MAX_UV);
@@ -7418,11 +7418,11 @@ static int bma2x2_power_deinit(struct bma2x2_data *data)
 
 	regulator_put(data->vdd);
 
-	if (regulator_count_voltages(data->vio) > 0)
-		regulator_set_voltage(data->vio,
+	if (regulator_count_voltages(data->vcc_i2c) > 0)
+		regulator_set_voltage(data->vcc_i2c,
 				0, BMA2x2_VIO_MAX_UV);
 
-	regulator_put(data->vio);
+	regulator_put(data->vcc_i2c);
 
 	return 0;
 }
@@ -7448,12 +7448,17 @@ static int bma2x2_parse_dt(struct device *dev,
 		dev_err(dev, "Unable to read sensor place paramater\n");
 		return rc;
 	}
-	if (temp_val > 7 || temp_val < 0) {
+#ifdef CONFIG_PRODUCT_SISLEYL
+	pdata->place = 2;
+#else
+	pdata->place = 1;
+#endif
+	/*if (temp_val > 7 || temp_val < 0) {
 		dev_err(dev, "Invalid place parameter, use default value 0\n");
-		pdata->place = 0;
+		pdata->place = 2;
 	} else {
 		pdata->place = temp_val;
-	}
+	}*/
 
 	pdata->int_en = of_property_read_bool(np, "bosch,use-interrupt");
 
@@ -8221,7 +8226,7 @@ static const struct i2c_device_id bma2x2_id[] = {
 MODULE_DEVICE_TABLE(i2c, bma2x2_id);
 
 static const struct of_device_id bma2x2_of_match[] = {
-	{ .compatible = "bosch,bma2x2", },
+	{ .compatible = "bma,bma222e", },
 	{ },
 };
 

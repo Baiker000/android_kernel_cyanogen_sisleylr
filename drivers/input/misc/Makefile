@@ -80,16 +80,13 @@ obj-$(CONFIG_SENSORS_ST480)		+= st480.o
 obj-$(CONFIG_SENSORS_LIS3DH)		+= lis3dh_acc.o
 obj-$(CONFIG_SENSORS_AP3426)		+= ap3426.o
 obj-$(CONFIG_SENSORS_AP3426_CM)		+= ap3426_cm.o
-ifeq ($(CONFIG_PRODUCT_SISLEYL),n)
 obj-$(CONFIG_SENSORS_BMA2X2)	+= bstclass.o
-endif
 obj-$(CONFIG_SENSORS_MPU6880)		+= mpu6880.o
 obj-$(CONFIG_SENSORS_PA12200001)	+= pa12200001.o
 obj-$(CONFIG_SENSORS_YL_HALL)		+= coolpad_hall.o
 obj-$(CONFIG_SENSORS_YL_PARAMS)		+= yl_sensor_params.o
-ifeq ($(CONFIG_PRODUCT_SISLEYL),n)
+
 obj-$(CONFIG_SENSORS_BMA2X2)	+= bma2x2.o
-endif
 obj-$(CONFIG_SENSORS_LTR553)	+= ltr553.o
 obj-$(CONFIG_SENSORS_LTR559)	+= ltr559-lc.o
 
@@ -133,13 +130,13 @@ ifeq ($(CONFIG_SENSORS_BMM050),y)
 endif
 
 obj-$(CONFIG_SENSORS_LSM303D)	+= lsm303d.o
+obj-$(CONFIG_APDS9930)		+= apds993x.o
+obj-$(CONFIG_APDS9930_SISLEY)		+= apds993x_sisley.o
 # lenovo-sw chenli2 for ALSPS start
 obj-$(CONFIG_SENSORS_EPL8801)		+= epl8801.o
 # lenovo-sw chenli2 for ALSPS end
 # lenovo-sw youwc1 for g-sensor start
-ifeq ($(CONFIG_PRODUCT_SISLEYL),y)
-obj-$(CONFIG_SENSORS_BMA2X2)    += bma2x2_driver.o
+#obj-$(CONFIG_SENSORS_BMA2X2)    += bma2x2_driver.o
 obj-$(CONFIG_SENSORS_BMA2X2)    += bst_sensor_common.o
-endif
 # lenovo-sw youwc1 for g-sensor end
 obj-$(CONFIG_LENOVO_HALL)    += hall_switch.o
