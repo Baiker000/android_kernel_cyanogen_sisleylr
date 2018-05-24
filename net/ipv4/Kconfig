@@ -630,6 +630,11 @@ config TCP_CONG_CUBIC
 	depends on !TCP_CONG_ADVANCED
 	default y
 
+config TCP_CONG_WESTWOOD
+	tristate
+	depends on !TCP_CONG_ADVANCED
+	default y
+
 config DEFAULT_TCP_CONG
 	string
 	default "bic" if DEFAULT_BIC
